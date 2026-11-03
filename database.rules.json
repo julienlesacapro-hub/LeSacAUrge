@@ -1,0 +1,23 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "rooms": {
+      "$room": {
+        ".read": "$room.matches(/^[0-9a-f]{32}$/)",
+        ".write": "$room.matches(/^[0-9a-f]{32}$/)",
+        "d": {
+          "$dossier": {
+            "$field": {
+              ".validate": "newData.hasChildren(['t', 'iv', 'ct']) && newData.child('t').isNumber() && newData.child('ct').isString() && newData.child('ct').val().length < 200000"
+            }
+          }
+        },
+        "x": {
+          "$dossier": { ".validate": "newData.isNumber()" }
+        },
+        "$other": { ".validate": false }
+      }
+    }
+  }
+}

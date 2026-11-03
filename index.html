@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>LeSacAUrge</title>
+  <meta name="description" content="LeSacAUrge - saisie rapide d'observations d'urgence, copie en texte brut en un clic. ©2026 LESACA Julien Tous droits réservés.">
+  <meta name="author" content="LESACA Julien">
+  <meta name="copyright" content="©2026 LESACA Julien Tous droits réservés">
+  <meta name="theme-color" content="#174a87">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="LeSacAUrge">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png">
+  <link rel="icon" type="image/png" sizes="64x64" href="icons/icon-64.png">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="icons/icon-64.png" alt="" width="36" height="36">
+      <div class="brand-text">
+        <span class="brand-name">LeSac<b>AU</b>rge</span>
+        <span class="brand-sub">Observation d'urgence</span>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button class="sync-pill" id="syncPill" type="button" title="Synchronisation">
+        <span class="dot"></span><span class="label">Local</span>
+      </button>
+      <button class="btn btn-light" id="copyAllBtn" type="button" title="Copier toute l'observation (Ctrl+Maj+C)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8h11v13H8z M5 16H4V3h11v1" /></svg>
+        <span class="hide-sm">Tout copier</span>
+      </button>
+      <button class="icon-btn" id="settingsBtn" type="button" title="Réglages" aria-label="Réglages">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="dossier-bar">
+    <div class="dossier-inner">
+      <label class="sr" for="dossierSelect">Dossier</label>
+      <select id="dossierSelect" title="Changer de dossier"></select>
+      <input id="dossierLabel" type="text" maxlength="40" placeholder="Libellé (ex : Box 4, sans nom)" autocomplete="off" title="Libellé du dossier : n'indiquez pas l'identité du patient">
+      <button class="btn btn-primary" id="newDossierBtn" type="button" title="Nouveau dossier">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span class="hide-sm">Nouveau</span>
+      </button>
+      <button class="icon-btn danger" id="deleteDossierBtn" type="button" title="Supprimer ce dossier" aria-label="Supprimer ce dossier">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <main id="sections" class="sections" aria-live="off"></main>
+
+  <footer class="footer">
+    <p>Saisie libre au clavier ou par la dictée vocale du clavier. Copie en texte brut, sans mise en forme.</p>
+    <p class="copyright">©2026 LESACA Julien Tous droits réservés.</p>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <dialog id="settings" class="modal">
+    <form method="dialog" class="modal-head">
+      <h2>Réglages</h2>
+      <button class="icon-btn" value="close" aria-label="Fermer">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </form>
+    <div class="modal-body">
+
+      <section class="set-block" id="syncBlock">
+        <h3>Synchronisation téléphone et ordinateur</h3>
+        <p class="hint">Les deux appareils partagent un <b>code de jumelage</b>. Les textes sont chiffrés sur l'appareil (AES-GCM 256) avant l'envoi ; la base distante ne voit que des données illisibles. <a href="#" id="syncHelpLink">Mise en place</a></p>
+        <div class="field">
+          <label for="dbUrl">Adresse de la base Firebase Realtime Database</label>
+          <input id="dbUrl" type="url" placeholder="https://mon-projet-default-rtdb.europe-west1.firebasedatabase.app" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="pairCode">Code de jumelage</label>
+          <div class="row">
+            <input id="pairCode" type="text" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false" autocapitalize="characters">
+            <button class="btn" type="button" id="genCodeBtn">Générer</button>
+          </div>
+        </div>
+        <div class="row wrap">
+          <button class="btn btn-primary" type="button" id="syncOnBtn">Activer la synchronisation</button>
+          <button class="btn" type="button" id="syncOffBtn">Désactiver</button>
+        </div>
+        <p class="sync-state" id="syncState"></p>
+        <div class="qr-wrap" id="qrWrap" hidden>
+          <div id="qr"></div>
+          <p class="hint">Scannez ce QR code avec l'appareil photo du téléphone pour le jumeler automatiquement.</p>
+        </div>
+        <details class="danger-zone">
+          <summary>Effacer les données distantes</summary>
+          <p class="hint">Supprime de la base distante tous les dossiers associés à ce code.</p>
+          <button class="btn danger" type="button" id="wipeRemoteBtn">Effacer maintenant</button>
+        </details>
+      </section>
+
+      <section class="set-block">
+        <h3>Copie</h3>
+        <label class="check"><input type="checkbox" id="optTitles"> Inclure les titres dans « Tout copier »</label>
+        <label class="check"><input type="checkbox" id="optAscii"> Mode compatibilité stricte (supprime les accents)</label>
+        <label class="check"><input type="checkbox" id="optMarkCopied"> Marquer les encarts déjà copiés</label>
+      </section>
+
+      <section class="set-block">
+        <h3>Conservation des données</h3>
+        <div class="field">
+          <label for="retention">Suppression automatique des dossiers inactifs</label>
+          <select id="retention">
+            <option value="12">Après 12 heures</option>
+            <option value="24">Après 24 heures</option>
+            <option value="72">Après 3 jours</option>
+            <option value="0">Jamais</option>
+          </select>
+        </div>
+      </section>
+
+      <section class="set-block">
+        <h3>Encarts affichés</h3>
+        <div id="sectionToggles" class="toggle-grid"></div>
+      </section>
+
+      <section class="set-block">
+        <h3>Pastilles personnalisées</h3>
+        <p class="hint">Une pastille par ligne.</p>
+        <div class="field">
+          <select id="chipSection"></select>
+        </div>
+        <textarea id="chipEditor" rows="8" spellcheck="false"></textarea>
+        <div class="row wrap">
+          <button class="btn btn-primary" type="button" id="chipSaveBtn">Enregistrer</button>
+          <button class="btn" type="button" id="chipResetBtn">Rétablir les pastilles par défaut</button>
+        </div>
+      </section>
+
+      <section class="set-block">
+        <h3>Apparence</h3>
+        <div class="seg" role="radiogroup" aria-label="Thème">
+          <label><input type="radio" name="theme" value="auto"> Auto</label>
+          <label><input type="radio" name="theme" value="light"> Clair</label>
+          <label><input type="radio" name="theme" value="dark"> Sombre</label>
+        </div>
+      </section>
+
+      <section class="set-block about">
+        <img src="icons/icon-192.png" alt="Logo LeSacAUrge" width="72" height="72">
+        <div>
+          <h3>LeSacAUrge</h3>
+          <p class="hint">Version <span id="appVersion"></span></p>
+          <p class="hint">Outil d'aide à la saisie. Ne saisissez pas de données identifiantes (nom, date de naissance, IPP). L'utilisateur reste responsable du contenu copié dans le dossier patient.</p>
+          <p class="copyright">©2026 LESACA Julien Tous droits réservés.</p>
+        </div>
+      </section>
+    </div>
+  </dialog>
+
+  <dialog id="help" class="modal">
+    <form method="dialog" class="modal-head">
+      <h2>Mise en place de la synchronisation</h2>
+      <button class="icon-btn" value="close" aria-label="Fermer">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </form>
+    <div class="modal-body help">
+      <ol>
+        <li>Créez un projet gratuit sur console.firebase.google.com.</li>
+        <li>Menu Build puis Realtime Database : créer une base, région europe-west1 (Belgique).</li>
+        <li>Onglet Règles : collez le contenu du fichier database.rules.json fourni avec l'application, puis publiez.</li>
+        <li>Copiez l'adresse de la base (https://...firebasedatabase.app) dans le champ prévu, sur l'ordinateur.</li>
+        <li>Sur l'ordinateur : Générer un code, puis Activer.</li>
+        <li>Sur le téléphone : scannez le QR code affiché (ou saisissez l'adresse et le code), puis Activer.</li>
+      </ol>
+      <p class="hint">Sans synchronisation, l'application fonctionne entièrement en local, hors ligne.</p>
+    </div>
+  </dialog>
+
+  <script src="js/config.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/vendor/qrcode.js"></script>
+  <script src="js/sync.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
