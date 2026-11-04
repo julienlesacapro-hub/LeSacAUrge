@@ -4,6 +4,6 @@
    saisie dans les reglages de l'application).
    ©2026 LESACA Julien - Tous droits reserves. */
 window.LSAU_CONFIG = {
-  version: '1.1.0',
+  version: '1.1.1',
   firebaseDatabaseUrl: 'https://lesacaurge-default-rtdb.europe-west1.firebasedatabase.app'
 };
