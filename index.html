@@ -7,7 +7,7 @@
   <meta name="description" content="LeSacAUrge - saisie rapide d'observations d'urgence, copie en texte brut en un clic. ©2026 LESACA Julien Tous droits réservés.">
   <meta name="author" content="LESACA Julien">
   <meta name="copyright" content="©2026 LESACA Julien Tous droits réservés">
-  <meta name="theme-color" content="#174a87">
+  <meta name="theme-color" content="#0f3666">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -19,40 +19,66 @@
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <img src="icons/icon-64.png" alt="" width="36" height="36">
-      <div class="brand-text">
-        <span class="brand-name">LeSac<b>AU</b>rge</span>
-        <span class="brand-sub">Observation d'urgence</span>
+  <div class="sticky-head" id="stickyHead">
+    <header class="topbar">
+      <div class="brand">
+        <img src="icons/icon-64.png" alt="" width="34" height="34">
+        <div class="brand-text">
+          <span class="brand-name">LeSac<b>AU</b>rge</span>
+          <span class="brand-sub">Observation d'urgence</span>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button class="sync-pill" id="syncPill" type="button" title="Synchronisation">
+          <span class="dot"></span><span class="label">Local</span>
+        </button>
+        <button class="icon-btn board-btn" id="boardBtn" type="button" title="Patients en cours et check-lists" aria-label="Patients en cours">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M3.5 6l1 1 2-2M3.5 12l1 1 2-2M3.5 18l1 1 2-2"/></svg>
+          <span class="count-badge" id="todoBadge" hidden></span>
+        </button>
+        <button class="btn btn-light" id="copyAllBtn" type="button" title="Copier toute l'observation (Ctrl+Maj+C)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8h11v13H8z M5 16H4V3h11v1" /></svg>
+          <span class="hide-sm">Tout copier</span>
+        </button>
+        <button class="icon-btn" id="settingsBtn" type="button" title="Réglages" aria-label="Réglages">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="pbanner" id="pbanner" data-c="unk">
+      <button type="button" class="pb-main" id="pbMain" title="Modifier les informations du patient" aria-expanded="false" aria-controls="pbEditor">
+        <span class="pb-loc" id="pbLoc"></span>
+        <span class="pb-name" id="pbName"></span>
+        <span class="pb-sa" id="pbSA"></span>
+        <svg class="pb-pen" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>
+      </button>
+      <button type="button" class="pb-new" id="newDossierBtn" title="Nouveau patient" aria-label="Nouveau patient">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+    </div>
+    <div class="pb-editor" id="pbEditor" hidden>
+      <div class="pb-grid">
+        <div class="field"><label for="pLoc">Localisation</label>
+          <input id="pLoc" type="text" maxlength="30" placeholder="Box 4, Couloir 2..." autocomplete="off"></div>
+        <div class="field"><label for="pName">Identité</label>
+          <input id="pName" type="text" maxlength="60" placeholder="NOM Prénom" autocomplete="off" autocapitalize="words" spellcheck="false"></div>
+        <div class="field"><label>Sexe</label>
+          <div class="seg sex-seg" role="radiogroup" aria-label="Sexe">
+            <label><input type="radio" name="psex" value="F"> Femme</label>
+            <label><input type="radio" name="psex" value="M"> Homme</label>
+            <label><input type="radio" name="psex" value=""> Non renseigné</label>
+          </div></div>
+        <div class="field"><label for="pAge">Âge</label>
+          <input id="pAge" type="text" inputmode="text" maxlength="12" placeholder="54 (ou 8 mois)" autocomplete="off"></div>
+      </div>
+      <div class="row wrap pb-actions">
+        <button type="button" class="btn btn-primary" id="pbDone">Valider</button>
+        <button type="button" class="btn danger" id="deleteDossierBtn">Supprimer ce patient</button>
       </div>
     </div>
-    <div class="top-actions">
-      <button class="sync-pill" id="syncPill" type="button" title="Synchronisation">
-        <span class="dot"></span><span class="label">Local</span>
-      </button>
-      <button class="btn btn-light" id="copyAllBtn" type="button" title="Copier toute l'observation (Ctrl+Maj+C)">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8h11v13H8z M5 16H4V3h11v1" /></svg>
-        <span class="hide-sm">Tout copier</span>
-      </button>
-      <button class="icon-btn" id="settingsBtn" type="button" title="Réglages" aria-label="Réglages">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
-      </button>
-    </div>
-  </header>
 
-  <div class="dossier-bar">
-    <div class="dossier-inner">
-      <label class="sr" for="dossierSelect">Dossier</label>
-      <select id="dossierSelect" title="Changer de dossier"></select>
-      <input id="dossierLabel" type="text" maxlength="40" placeholder="Libellé (ex : Box 4, sans nom)" autocomplete="off" title="Libellé du dossier : n'indiquez pas l'identité du patient">
-      <button class="btn btn-primary" id="newDossierBtn" type="button" title="Nouveau dossier">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span class="hide-sm">Nouveau</span>
-      </button>
-      <button class="icon-btn danger" id="deleteDossierBtn" type="button" title="Supprimer ce dossier" aria-label="Supprimer ce dossier">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>
-      </button>
-    </div>
+    <nav class="secnav" id="secnav" aria-label="Encarts"></nav>
   </div>
 
   <main id="sections" class="sections" aria-live="off"></main>
@@ -111,6 +137,14 @@
       </section>
 
       <section class="set-block">
+        <h3>Saisie et confidentialité</h3>
+        <label class="check"><input type="checkbox" id="optSpell"> Correcteur orthographique du navigateur</label>
+        <p class="hint">Si le clavier du téléphone disparaît en touchant un mot souligné, désactivez cette option : la correction automatique du clavier reste active.</p>
+        <label class="check"><input type="checkbox" id="optSyncIdent"> Synchroniser l'identité du patient entre les appareils</label>
+        <p class="hint">Désactivé : le nom reste sur l'appareil où il a été saisi ; localisation, sexe et âge sont synchronisés.</p>
+      </section>
+
+      <section class="set-block">
         <h3>Conservation des données</h3>
         <div class="field">
           <label for="retention">Suppression automatique des dossiers inactifs</label>
@@ -159,6 +193,22 @@
           <p class="copyright">©2026 LESACA Julien Tous droits réservés.</p>
         </div>
       </section>
+    </div>
+  </dialog>
+
+  <dialog id="board" class="modal board">
+    <form method="dialog" class="modal-head">
+      <h2>Patients en cours</h2>
+      <button class="icon-btn" value="close" aria-label="Fermer">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </form>
+    <div class="modal-body">
+      <div class="board-legend"><span class="lg todo">À faire</span><span class="lg done">Fait</span></div>
+      <div id="boardList" class="board-list"></div>
+      <button type="button" class="btn btn-primary board-new" id="boardNewBtn">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Nouveau patient
+      </button>
     </div>
   </dialog>
 

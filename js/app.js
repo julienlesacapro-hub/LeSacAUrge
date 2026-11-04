@@ -7,23 +7,30 @@
   const SECTIONS = window.SECTIONS;
   const EXAM = window.EXAM_SYSTEMS;
   const VITALS = window.VITALS;
+  const ECG = window.ECG;
+  const TODO = window.TODO_ITEMS;
   const DATA_KEY = 'lsau.data.v1';
   const SET_KEY = 'lsau.settings.v1';
   const $ = (s, r) => (r || document).querySelector(s);
   const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+  const svg = (inner) => '<svg viewBox="0 0 24 24" aria-hidden="true">' + inner + '</svg>';
 
   const ICON = {
-    copy: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8h11v13H8z M5 16H4V3h11v1"/></svg>',
-    check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg>',
-    clear: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
-    clock: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
-    plus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
-    down: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>'
+    copy: svg('<path d="M8 8h11v13H8z M5 16H4V3h11v1"/>'),
+    check: svg('<path d="M5 12l5 5L20 7"/>'),
+    clear: svg('<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>'),
+    clock: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+    plus: svg('<path d="M12 5v14M5 12h14"/>'),
+    down: svg('<path d="M6 9l6 6 6-6"/>'),
+    x: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
+    pen: svg('<path d="M4 20h4L19 9l-4-4L4 16z"/>'),
+    list: svg('<path d="M9 6h11M9 12h11M9 18h11"/><path d="M3.5 6l1 1 2-2M3.5 12l1 1 2-2M3.5 18l1 1 2-2"/>'),
+    send: svg('<path d="M5 12h14M13 6l6 6-6 6"/>')
   };
 
-  /* ------------------------------------------------------------------ */
+  /* ================================================================== */
   /* Stockage                                                            */
-  /* ------------------------------------------------------------------ */
+  /* ================================================================== */
   function load(key, fallback) {
     try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
     catch (e) { return fallback; }
@@ -34,11 +41,12 @@
 
   const settings = Object.assign({
     theme: 'auto', titles: true, ascii: false, markCopied: true, retentionH: 24,
-    hidden: [], chips: {}, dbUrl: CFG.firebaseDatabaseUrl || '', code: '', syncOn: false
+    hidden: [], chips: {}, dbUrl: CFG.firebaseDatabaseUrl || '', code: '', syncOn: false,
+    spell: true, syncIdent: false
   }, load(SET_KEY, {}));
 
   const store = Object.assign({ dossiers: {}, current: null, tombstones: {} }, load(DATA_KEY, {}));
-  const copiedFlags = {}; // local, non synchronise : { dossierId: { sectionId: texteCopie } }
+  const copiedFlags = {}; // local : { dossierId: { sectionId: texteCopie } }
 
   let saveTimer = null;
   function persist() { clearTimeout(saveTimer); saveTimer = setTimeout(() => save(DATA_KEY, store), 250); }
@@ -49,29 +57,48 @@
     return Array.from(b, x => x.toString(36).padStart(2, '0')).join('').slice(0, 14);
   }
   function hhmm(d) {
-    d = d || new Date();
+    d = d instanceof Date ? d : new Date(d || Date.now());
     return String(d.getHours()).padStart(2, '0') + 'h' + String(d.getMinutes()).padStart(2, '0');
   }
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;' }[c]));
+  }
+
+  // Normalise un dossier (migration des anciennes versions)
+  function fix(d) {
+    d.meta = d.meta || { label: '', created: Date.now() };
+    d.fields = d.fields || {};
+    d.vitals = d.vitals || {};
+    d.t = d.t || {};
+    d.evo = Array.isArray(d.evo) ? d.evo : [];
+    d.todo = d.todo && typeof d.todo === 'object' ? d.todo : {};
+    d.ecg = d.ecg && typeof d.ecg === 'object' ? d.ecg : {};
+    if (d.fields.evolution && !d.evo.length) {
+      d.evo.push({ id: uid(), t: d.meta.created || Date.now(), u: Date.now(), text: d.fields.evolution });
+    }
+    delete d.fields.evolution;
+    return d;
+  }
+  Object.values(store.dossiers).forEach(fix);
 
   function newDossier(auto) {
     const id = uid();
     const now = Date.now();
-    store.dossiers[id] = {
-      id, meta: { label: '', created: now, auto: !!auto },
-      fields: {}, vitals: {}, t: auto ? {} : { _meta: now }
-    };
+    store.dossiers[id] = fix({
+      id, meta: { label: '', name: '', sex: '', age: '', created: now, auto: !!auto },
+      t: auto ? {} : { _meta: now }
+    });
     store.current = id;
     persist();
     if (!auto) sync.queuePush(id, '_meta', 0);
     return store.dossiers[id];
   }
-  function dossierName(d) {
-    const time = hhmm(new Date(d.meta.created || Date.now()));
-    return d.meta.label ? d.meta.label + ' (' + time + ')' : 'Dossier de ' + time;
-  }
   function isEmpty(d) {
-    return !d.meta.label && !Object.values(d.fields).some(v => v && v.trim()) &&
-      !Object.values(d.vitals || {}).some(v => v && String(v).trim());
+    const m = d.meta;
+    return !m.label && !m.name && !m.sex && !m.age &&
+      !Object.values(d.fields).some(v => v && v.trim()) &&
+      !Object.values(d.vitals).some(v => v && String(v).trim()) &&
+      !d.evo.some(e => !e.del) && !Object.values(d.todo).some(x => x.s);
   }
   function current() {
     let d = store.dossiers[store.current];
@@ -90,9 +117,7 @@
     const ts = Object.values(d.t || {});
     return Math.max(d.meta.created || 0, ts.length ? Math.max.apply(null, ts) : 0);
   }
-
-  function touch(d, field) {
-    d.t = d.t || {};
+  function touch(d, field, delay) {
     if (d.meta.auto) {
       delete d.meta.auto;
       d.t._meta = Date.now();
@@ -100,12 +125,37 @@
     }
     d.t[field] = Date.now();
     persist();
-    sync.queuePush(d.id, field);
+    sync.queuePush(d.id, field, delay);
   }
 
-  /* ------------------------------------------------------------------ */
+  /* ================================================================== */
+  /* Patient : age, couleur, nom                                         */
+  /* ================================================================== */
+  function ageInfo(raw) {
+    const s = String(raw || '').trim().toLowerCase();
+    if (!s) return { known: false, minor: false, text: '' };
+    const n = parseFloat(s.replace(',', '.'));
+    if (isNaN(n)) return { known: false, minor: false, text: raw };
+    const sub = /(mois|sem|jour|\bj\b|\bm\b|\d\s*j$|\d\s*m$)/.test(s);
+    const years = sub ? 0 : n;
+    return { known: true, minor: years < 18, text: sub ? raw.trim() : n + ' ans' };
+  }
+  function colorOf(meta) {
+    const a = ageInfo(meta.age);
+    if (a.known && a.minor) return 'minor';
+    if (meta.sex === 'F') return 'f';
+    if (meta.sex === 'M') return 'm';
+    return 'unk';
+  }
+  function sexLabel(s) { return s === 'F' ? 'F' : s === 'M' ? 'H' : ''; }
+  function patientTitle(d) {
+    const m = d.meta;
+    return m.label || m.name || ('Patient de ' + hhmm(m.created));
+  }
+
+  /* ================================================================== */
   /* Texte brut                                                          */
-  /* ------------------------------------------------------------------ */
+  /* ================================================================== */
   function toPlain(s) {
     s = String(s || '').normalize('NFC')
       .replace(/\r\n?/g, '\n')
@@ -146,53 +196,105 @@
     return ok;
   }
 
-  /* ------------------------------------------------------------------ */
-  /* Rendu                                                               */
-  /* ------------------------------------------------------------------ */
+  /* ================================================================== */
+  /* Hauteur automatique des zones de texte, sans saut de page           */
+  /* (mesure sur un clone hors ecran : la zone n'est jamais reduite a 0,  */
+  /* ce qui evitait des sauts de defilement qui fermaient le clavier).   */
+  /* ================================================================== */
+  const mirror = document.createElement('textarea');
+  mirror.setAttribute('aria-hidden', 'true');
+  mirror.tabIndex = -1;
+  mirror.style.cssText = 'position:absolute;top:0;left:-9999px;visibility:hidden;height:0;min-height:0;overflow:hidden;resize:none;pointer-events:none';
+  document.body.appendChild(mirror);
+  const MIRROR_PROPS = ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'paddingTop',
+    'paddingBottom', 'paddingLeft', 'paddingRight', 'borderTopWidth', 'borderBottomWidth', 'borderLeftWidth',
+    'borderRightWidth', 'boxSizing', 'whiteSpace', 'wordBreak', 'overflowWrap', 'tabSize'];
+  function autoGrow(ta) {
+    if (ta === mirror || !ta.isConnected || !ta.offsetWidth) return;
+    const cs = getComputedStyle(ta);
+    MIRROR_PROPS.forEach(p => { mirror.style[p] = cs[p]; });
+    mirror.style.height = '0px';
+    mirror.style.borderStyle = 'solid';
+    mirror.style.width = ta.offsetWidth + 'px';
+    mirror.value = ta.value || ta.placeholder || ' ';
+    const min = parseFloat(ta.dataset.min || '92');
+    const borders = parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+    const h = Math.max(min, mirror.scrollHeight + borders + 2);
+    if (Math.abs(ta.offsetHeight - h) > 1) ta.style.height = h + 'px';
+  }
+
+  /* ================================================================== */
+  /* Rendu des encarts                                                   */
+  /* ================================================================== */
   const main = $('#sections');
-  const els = {}; // sectionId -> { card, ta, chipsWrap }
+  const els = {}; // sectionId -> { card, ta, chipsWrap, sec }
 
   function chipsFor(sectionId) {
     const custom = settings.chips[sectionId];
     return Array.isArray(custom) ? custom : (window.DEFAULT_CHIPS[sectionId] || []);
   }
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;' }[c]));
+  function chipsHtml(list, attr) {
+    return list.map(c => '<button type="button" class="chip" ' + (attr || 'data-v') + '="' + escapeHtml(c) + '">' + escapeHtml(c) + '</button>').join('');
   }
+  function visibleSections() { return SECTIONS.filter(s => !settings.hidden.includes(s.id)); }
 
   function renderSections() {
     main.innerHTML = '';
     for (const k of Object.keys(els)) delete els[k];
+
+    // Check-list du patient (non copiee)
+    const todoCard = document.createElement('section');
+    todoCard.className = 'card wide todo-card';
+    todoCard.id = 'card-todo';
+    todoCard.innerHTML =
+      '<div class="card-head"><h2>Check-list</h2>' +
+      '<button type="button" class="link-btn" id="todoBoardLink">' + ICON.list + 'Tous les patients</button></div>' +
+      '<p class="todo-hint">Toucher : à faire, puis fait, puis retirer.</p>' +
+      '<div class="todo-grid" id="todoGrid"></div>' +
+      '<div class="todo-add"><input id="todoCustom" type="text" maxlength="40" placeholder="Autre élément (ex : appeler le labo)" autocomplete="off">' +
+      '<button type="button" class="btn" id="todoAddBtn">' + ICON.plus + 'Ajouter</button></div>';
+    main.appendChild(todoCard);
+    bindTodo(todoCard);
+
     let n = 0;
-    for (const sec of SECTIONS) {
-      if (settings.hidden.includes(sec.id)) continue;
+    for (const sec of visibleSections()) {
       n++;
       const card = document.createElement('section');
-      card.className = 'card' + (['motif', 'anamnese', 'examen'].includes(sec.id) ? ' wide' : '');
+      card.className = 'card' + (['motif', 'anamnese', 'examen', 'evolution'].includes(sec.id) ? ' wide' : '');
       card.dataset.id = sec.id;
+      card.id = 'card-' + sec.id;
       const chips = chipsFor(sec.id);
+      const isEvo = sec.id === 'evolution';
       card.innerHTML =
         '<div class="card-head">' +
           '<h2>' + escapeHtml(sec.title) + '</h2>' +
           '<span class="badge">Copié</span>' +
-          '<button class="btn copy-btn" type="button" title="Copier cet encart' + (n <= 9 ? ' (Alt+' + n + ')' : '') + '">' + ICON.copy + '<span>Copier</span></button>' +
+          '<button class="btn copy-btn" type="button" title="Copier cet encart' + (n <= 9 ? ' (Alt+' + n + ')' : '') + '">' + ICON.copy + '<span>' + (isEvo ? 'Tout' : 'Copier') + '</span></button>' +
         '</div>' +
         (sec.id === 'examen' ? examToolsHtml() : '') +
-        (chips.length ? '<div class="chips-wrap"><div class="chips">' +
-          chips.map(c => '<button type="button" class="chip" data-v="' + escapeHtml(c) + '">' + escapeHtml(c) + '</button>').join('') +
+        (sec.id === 'ecg' ? ecgToolsHtml() : '') +
+        (chips.length ? '<div class="chips-wrap"><div class="chips">' + chipsHtml(chips) +
           '</div><button type="button" class="link-btn more-btn">' + ICON.down + '<span>Afficher tout</span></button></div>' : '') +
-        '<textarea rows="3" spellcheck="true" autocapitalize="sentences" placeholder="' + escapeHtml(sec.placeholder || 'Saisie ou dictée...') + '" aria-label="' + escapeHtml(sec.title) + '"></textarea>' +
-        '<div class="card-foot">' +
-          (sec.id === 'evolution' ? '<button type="button" class="link-btn stamp-btn">' + ICON.clock + 'Horodater</button>' : '') +
-          '<span class="spacer"></span><span class="count"></span>' +
-          '<button type="button" class="link-btn clear-btn">' + ICON.clear + 'Effacer</button>' +
-        '</div>';
+        (isEvo ? evoHtml() :
+          '<textarea rows="3" placeholder="' + escapeHtml(sec.placeholder || 'Saisie ou dictée...') + '" aria-label="' + escapeHtml(sec.title) + '"></textarea>' +
+          '<div class="card-foot"><span class="spacer"></span><span class="count"></span>' +
+          '<button type="button" class="link-btn clear-btn">' + ICON.clear + 'Effacer</button></div>');
       main.appendChild(card);
-      els[sec.id] = { card, ta: $('textarea', card), chipsWrap: $('.chips-wrap', card), sec };
+      els[sec.id] = { card, ta: isEvo ? null : $('textarea', card), chipsWrap: $('.chips-wrap', card), sec };
       bindCard(sec, card);
     }
+    applySpell();
+    renderNav();
     fillFromDossier();
-    requestAnimationFrame(updateChipOverflow);
+    requestAnimationFrame(() => { updateChipOverflow(); $$('textarea').forEach(autoGrow); });
+  }
+
+  function applySpell() {
+    $$('#sections textarea, #sections input[type="text"]').forEach(el => {
+      el.spellcheck = !!settings.spell;
+      el.setAttribute('autocorrect', 'on');
+      if (el.tagName === 'TEXTAREA') el.setAttribute('autocapitalize', 'sentences');
+    });
   }
 
   function examToolsHtml() {
@@ -210,43 +312,77 @@
       '</div></div>';
   }
 
-  function autoGrow(ta) {
-    ta.style.height = 'auto';
-    ta.style.height = Math.max(92, ta.scrollHeight + 2) + 'px';
+  function ecgToolsHtml() {
+    return '<div class="ecg-tools">' +
+      '<div class="ecg-top">' +
+        '<button type="button" class="btn btn-primary" id="ecgNormal">' + ICON.check + 'ECG normal</button>' +
+        '<div class="vital"><label for="ecgFc">FC</label><div class="in"><input id="ecgFc" inputmode="numeric" placeholder="80" autocomplete="off"><span>bpm</span></div></div>' +
+        '<div class="vital"><label for="ecgQtc">QTc</label><div class="in"><input id="ecgQtc" inputmode="numeric" placeholder="420" autocomplete="off"><span>ms</span></div></div>' +
+      '</div>' +
+      '<div class="ecg-group"><span class="ecg-lbl">Rythme</span><div class="chips one" data-g="rythme">' + chipsHtml(ECG.rhythms) + '</div></div>' +
+      '<div class="ecg-group"><span class="ecg-lbl">Axe</span><div class="chips one" data-g="axe">' + chipsHtml(ECG.axes) + '</div></div>' +
+      '<div class="ecg-group"><span class="ecg-lbl">Conduction</span><div class="chips" data-g="conduction">' + chipsHtml(ECG.conduction) + '</div></div>' +
+      '<div class="ecg-group"><span class="ecg-lbl">Repolarisation</span><div class="chips" data-g="repol">' + chipsHtml(ECG.repol) + '</div></div>' +
+      '<div class="ecg-group"><span class="ecg-lbl">Autres</span><div class="chips" data-g="autres">' + chipsHtml(ECG.autres) + '</div></div>' +
+      '</div>';
+  }
+
+  function evoHtml() {
+    return '<div class="evo-list" id="evoList"></div>' +
+      '<div class="evo-new">' +
+        '<textarea id="evoInput" rows="2" data-min="64" placeholder="Nouvelle entrée horodatée (saisie ou dictée)..." aria-label="Nouvelle entrée d\'évolution"></textarea>' +
+        '<button type="button" class="btn btn-primary" id="evoAddBtn" title="Ajouter l\'entrée avec l\'heure actuelle">' + ICON.clock + 'Ajouter</button>' +
+      '</div>' +
+      '<div class="card-foot"><span class="evo-info" id="evoInfo"></span><span class="spacer"></span>' +
+        '<button type="button" class="btn copy-new-btn" id="evoCopyNew">' + ICON.copy + 'Copier les nouvelles</button></div>';
   }
 
   function fillFromDossier() {
     const d = current();
     for (const id of Object.keys(els)) {
       const e = els[id];
-      const v = d.fields[id] || '';
-      if (e.ta.value !== v) e.ta.value = v;
-      autoGrow(e.ta);
+      if (e.ta) {
+        const v = d.fields[id] || '';
+        if (e.ta.value !== v && document.activeElement !== e.ta) e.ta.value = v;
+        autoGrow(e.ta);
+      }
       refreshCard(id);
     }
     if (els.examen) {
       for (const v of VITALS) {
         const inp = $('#v_' + v.id);
-        if (inp && document.activeElement !== inp) inp.value = (d.vitals && d.vitals[v.id]) || '';
+        if (inp && document.activeElement !== inp) inp.value = d.vitals[v.id] || '';
       }
     }
-    renderDossierBar();
+    if (els.ecg) refreshEcgControls();
+    if (els.evolution) renderEvo();
+    renderTodo();
+    renderBanner();
+    renderNavState();
   }
 
   function refreshCard(id) {
     const e = els[id];
     if (!e) return;
+    const d = current();
+    if (id === 'evolution') {
+      const has = d.evo.some(x => !x.del && x.text.trim());
+      e.card.classList.toggle('has-text', has);
+      e.card.classList.toggle('copied', settings.markCopied && has && d.evo.every(x => x.del || x.c));
+      return;
+    }
     const text = e.ta.value;
     e.card.classList.toggle('has-text', text.trim().length > 0);
     const cf = (copiedFlags[store.current] || {})[id];
     e.card.classList.toggle('copied', settings.markCopied && cf != null && cf === toPlain(text) && text.trim() !== '');
     const count = $('.count', e.card);
-    count.textContent = text.length ? text.length + ' car.' : '';
+    if (count) count.textContent = text.length ? text.length + ' car.' : '';
     if (e.chipsWrap) {
       const segs = segments(text, e.sec.sep);
       $$('.chip', e.chipsWrap).forEach(c => c.classList.toggle('on', segs.has(norm(c.dataset.v))));
     }
     if (id === 'examen') refreshExam();
+    renderNavState();
   }
 
   function norm(s) { return s.trim().replace(/[.;,]+$/, '').toLowerCase(); }
@@ -254,7 +390,6 @@
     const parts = text.split(sep.trim() === '' ? /\n/ : /[,\n]/);
     return new Set(parts.map(norm).filter(Boolean));
   }
-
   function updateChipOverflow() {
     $$('.chips-wrap').forEach(w => {
       const c = $('.chips', w);
@@ -262,15 +397,83 @@
     });
   }
 
-  /* ------------------------------------------------------------------ */
-  /* Interactions                                                        */
-  /* ------------------------------------------------------------------ */
+  /* ================================================================== */
+  /* Navigation entre encarts                                            */
+  /* ================================================================== */
+  const nav = $('#secnav');
+  function renderNav() {
+    const items = [{ id: 'todo', short: 'Check-list' }].concat(visibleSections());
+    nav.innerHTML = items.map(s =>
+      '<button type="button" class="nav-chip" data-go="' + s.id + '"><span class="ndot"></span>' + escapeHtml(s.short || s.title) + '</button>').join('');
+  }
+  function renderNavState() {
+    const d = store.dossiers[store.current];
+    if (!d) return;
+    $$('.nav-chip', nav).forEach(b => {
+      const id = b.dataset.go;
+      let filled;
+      if (id === 'todo') filled = Object.values(d.todo).some(x => x.s === 'todo');
+      else if (id === 'evolution') filled = d.evo.some(x => !x.del && x.text.trim());
+      else filled = !!(d.fields[id] && d.fields[id].trim());
+      b.classList.toggle('filled', filled);
+    });
+  }
+  nav.addEventListener('click', ev => {
+    const b = ev.target.closest('.nav-chip'); if (!b) return;
+    const card = document.getElementById('card-' + b.dataset.go);
+    if (!card) return;
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    navLockUntil = Date.now() + 900;
+    setTimeout(() => window.dispatchEvent(new Event('scroll')), 950);
+    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setActiveNav(b.dataset.go, true);
+  });
+  let activeNav = null;
+  function setActiveNav(id, fromClick) {
+    if (activeNav === id) return;
+    activeNav = id;
+    $$('.nav-chip', nav).forEach(b => b.classList.toggle('active', b.dataset.go === id));
+    // centre la pastille active dans la barre (defilement horizontal de la barre seule)
+    const btn = $('.nav-chip[data-go="' + id + '"]', nav);
+    const typing = document.activeElement && /^(TEXTAREA|INPUT)$/.test(document.activeElement.tagName);
+    if (btn && (!typing || fromClick)) {
+      nav.scrollTo({ left: btn.offsetLeft - nav.clientWidth / 2 + btn.offsetWidth / 2, behavior: 'smooth' });
+    }
+  }
+  let navRaf = 0, navLockUntil = 0;
+  window.addEventListener('scroll', () => {
+    if (navRaf || Date.now() < navLockUntil) return;
+    navRaf = requestAnimationFrame(() => {
+      navRaf = 0;
+      const top = headH() + 24;
+      let best = null;
+      $$('#sections > .card').forEach(c => { if (c.getBoundingClientRect().top <= top) best = c; });
+      if (!best) best = $('#sections > .card');
+      if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4) {
+        const cards = $$('#sections > .card');
+        best = cards[cards.length - 1];
+      }
+      if (best) setActiveNav(best.id.replace('card-', ''));
+    });
+  }, { passive: true });
+
+  const head = $('#stickyHead');
+  function headH() { return head.offsetHeight; }
+  function syncHeadVar() { document.documentElement.style.setProperty('--head-h', headH() + 'px'); }
+  if (window.ResizeObserver) new ResizeObserver(syncHeadVar).observe(head);
+  syncHeadVar();
+
+  /* ================================================================== */
+  /* Encarts : interactions                                              */
+  /* ================================================================== */
+  const pendingRemote = new Set(); // champs recus pendant la saisie, appliques a la sortie du champ
+
   function setField(id, value) {
     const d = current();
     d.fields[id] = value;
     touch(d, id);
     const e = els[id];
-    if (e && e.ta.value !== value) { e.ta.value = value; autoGrow(e.ta); }
+    if (e && e.ta && e.ta.value !== value) { e.ta.value = value; autoGrow(e.ta); }
     refreshCard(id);
   }
 
@@ -279,37 +482,50 @@
     let text = e.ta.value;
     const segs = segments(text, sec.sep);
     if (segs.has(norm(value))) {
-      // retrait de la pastille
-      const re = new RegExp('(^|' + (sec.sep.includes('\n') ? '\\n' : '[,\\n]') + ')\\s*' +
-        value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*[.;]?\\s*(?=$|' + (sec.sep.includes('\n') ? '\\n' : '[,\\n]') + ')', 'i');
+      const sepRe = sec.sep.includes('\n') ? '\\n' : '[,\\n]';
+      const re = new RegExp('(^|' + sepRe + ')\\s*' + value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') +
+        '\\s*[.;]?\\s*(?=$|' + sepRe + ')', 'i');
       text = text.replace(re, '').replace(/^[,\s]+/, '').replace(/,\s*,/g, ',').replace(/[,\s]+$/, '').replace(/\n{2,}/g, '\n');
     } else {
       const trimmed = text.replace(/\s+$/, '');
-      text = trimmed ? trimmed + (sec.sep === ', ' && /[\n]$/.test(text) ? '' : sec.sep) + value : value;
+      text = trimmed ? trimmed + sec.sep + value : value;
     }
     setField(sec.id, text);
   }
 
   function bindCard(sec, card) {
     const e = els[sec.id];
-    e.ta.addEventListener('input', () => {
-      autoGrow(e.ta);
-      const d = current();
-      d.fields[sec.id] = e.ta.value;
-      touch(d, sec.id);
-      refreshCard(sec.id);
-    });
+    if (e.ta) {
+      e.ta.addEventListener('input', () => {
+        pendingRemote.delete(sec.id);
+        autoGrow(e.ta);
+        const d = current();
+        d.fields[sec.id] = e.ta.value;
+        touch(d, sec.id);
+        refreshCard(sec.id);
+      });
+      e.ta.addEventListener('blur', () => {
+        if (!pendingRemote.has(sec.id)) return;
+        pendingRemote.delete(sec.id);
+        const v = current().fields[sec.id] || '';
+        if (e.ta.value !== v) { e.ta.value = v; autoGrow(e.ta); refreshCard(sec.id); }
+      });
+      $('.clear-btn', card).addEventListener('click', () => {
+        if (!e.ta.value) return;
+        const prev = e.ta.value;
+        setField(sec.id, '');
+        toast('Encart effacé', 'Annuler', () => setField(sec.id, prev));
+      });
+    }
     $('.copy-btn', card).addEventListener('click', () => copySection(sec.id));
-    $('.clear-btn', card).addEventListener('click', () => {
-      if (!e.ta.value) return;
-      const prev = e.ta.value;
-      setField(sec.id, '');
-      toast('Encart effacé', 'Annuler', () => setField(sec.id, prev));
-    });
     if (e.chipsWrap) {
       e.chipsWrap.addEventListener('click', ev => {
         const chip = ev.target.closest('.chip');
-        if (chip) { toggleChip(sec, chip.dataset.v); return; }
+        if (chip) {
+          if (sec.id === 'evolution') addEvoEntry(chip.dataset.v, true);
+          else toggleChip(sec, chip.dataset.v);
+          return;
+        }
         const more = ev.target.closest('.more-btn');
         if (more) {
           const open = e.chipsWrap.classList.toggle('open');
@@ -318,16 +534,12 @@
         }
       });
     }
-    const stamp = $('.stamp-btn', card);
-    if (stamp) stamp.addEventListener('click', () => {
-      const t = e.ta.value.replace(/\s+$/, '');
-      setField(sec.id, (t ? t + '\n' : '') + hhmm() + ' : ');
-      e.ta.focus();
-      e.ta.setSelectionRange(e.ta.value.length, e.ta.value.length);
-    });
     if (sec.id === 'examen') bindExam(card);
+    if (sec.id === 'ecg') bindEcg(card);
+    if (sec.id === 'evolution') bindEvo(card);
   }
 
+  /* ---------------- Examen clinique ---------------- */
   function examPresent(text, sys) { return text.includes(sys.text); }
   function refreshExam() {
     const e = els.examen; if (!e) return;
@@ -351,22 +563,17 @@
     return (text.slice(0, a) + text.slice(z)).replace(/^\n+|\n+$/g, '');
   }
   function insertExamText(text, sys) {
-    // insere dans l'ordre des appareils, apres le dernier appareil precedent present
     const idx = EXAM.indexOf(sys);
-    let pos = -1;
     for (let i = idx - 1; i >= 0; i--) {
       const p = text.indexOf(EXAM[i].text);
-      if (p >= 0) { pos = p + EXAM[i].text.length; break; }
+      if (p >= 0) { const pos = p + EXAM[i].text.length; return text.slice(0, pos) + '\n' + sys.text + text.slice(pos); }
     }
-    if (pos < 0) {
-      for (let i = idx + 1; i < EXAM.length; i++) {
-        const p = text.indexOf(EXAM[i].text);
-        if (p >= 0) { return text.slice(0, p) + sys.text + '\n' + text.slice(p); }
-      }
-      const t = text.replace(/\s+$/, '');
-      return t ? t + '\n' + sys.text : sys.text;
+    for (let i = idx + 1; i < EXAM.length; i++) {
+      const p = text.indexOf(EXAM[i].text);
+      if (p >= 0) return text.slice(0, p) + sys.text + '\n' + text.slice(p);
     }
-    return text.slice(0, pos) + '\n' + sys.text + text.slice(pos);
+    const t = text.replace(/\s+$/, '');
+    return t ? t + '\n' + sys.text : sys.text;
   }
   function bindExam(card) {
     const e = els.examen;
@@ -383,11 +590,11 @@
       else EXAM.forEach(s => { if (!examPresent(t, s)) t = insertExamText(t, s); });
       setField('examen', t);
     });
-    $$('.vital input', card).forEach(inp => inp.addEventListener('input', () => {
+    $$('.vital input', $('.vitals', card)).forEach(inp => inp.addEventListener('input', () => {
       const d = current();
-      d.vitals = d.vitals || {};
       d.vitals[inp.dataset.v] = inp.value;
       touch(d, '_vitals');
+      if (inp.dataset.v === 'fc' && els.ecg) $('#ecgFc').placeholder = inp.value || '80';
     }));
     $('#vitalsInsert').addEventListener('click', () => {
       const d = current();
@@ -401,71 +608,410 @@
     });
   }
 
-  async function copySection(id) {
-    const e = els[id];
-    const text = toPlain(e.ta.value);
-    if (!text) { toast('Encart vide'); return; }
-    const ok = await copyText(text);
-    if (!ok) { toast('Copie impossible : sélectionnez le texte manuellement'); return; }
-    copiedFlags[store.current] = copiedFlags[store.current] || {};
-    copiedFlags[store.current][id] = text;
-    const btn = $('.copy-btn', e.card);
-    btn.classList.add('done');
-    btn.innerHTML = ICON.check + '<span>Copié</span>';
-    setTimeout(() => { btn.classList.remove('done'); btn.innerHTML = ICON.copy + '<span>Copier</span>'; }, 1400);
-    refreshCard(id);
-    toast(e.sec.title + ' copié');
+  /* ---------------- ECG ---------------- */
+  function ecgState(d) {
+    const s = d.ecg;
+    return {
+      rythme: s.rythme || 'RSR', axe: s.axe || 'non dévié', fc: s.fc || '', qtc: s.qtc || '',
+      conduction: s.conduction || [], repol: s.repol || [], autres: s.autres || [], gen: s.gen || ''
+    };
   }
-
-  async function copyAll() {
-    const d = current();
-    const blocks = [];
-    for (const sec of SECTIONS) {
-      if (settings.hidden.includes(sec.id)) continue;
-      const t = toPlain(d.fields[sec.id] || '');
-      if (!t) continue;
-      blocks.push(settings.titles ? toPlain(sec.title) + ' :\n' + t : t);
+  function ecgSentence(s) {
+    const parts = [s.rythme + ' d\'axe ' + s.axe, 'à ' + (String(s.fc).trim() || 'xx') + ' bpm'];
+    const c = s.conduction, r = s.repol;
+    if (!c.length && !r.length) parts.push('sans trouble de la conduction ni de la repolarisation');
+    else {
+      parts.push(c.length ? c.join(', ') : 'sans trouble de la conduction');
+      parts.push(r.length ? r.join(', ') : 'sans trouble de la repolarisation');
     }
-    if (!blocks.length) { toast('Observation vide'); return; }
-    const ok = await copyText(blocks.join('\n\n'));
-    toast(ok ? 'Observation complète copiée' : 'Copie impossible');
+    if (s.autres.length) parts.push(s.autres.join(', '));
+    parts.push('QTc à ' + (String(s.qtc).trim() || 'xx') + ' ms');
+    return parts.join(', ') + '.';
+  }
+  function refreshEcgControls() {
+    const d = current();
+    const s = ecgState(d);
+    const fc = $('#ecgFc'), qtc = $('#ecgQtc');
+    if (document.activeElement !== fc) fc.value = s.fc;
+    if (document.activeElement !== qtc) qtc.value = s.qtc;
+    fc.placeholder = d.vitals.fc || '80';
+    $$('.ecg-tools .chips', els.ecg.card).forEach(box => {
+      const g = box.dataset.g;
+      $$('.chip', box).forEach(ch => {
+        const v = ch.dataset.v;
+        ch.classList.toggle('on', Array.isArray(s[g]) ? s[g].includes(v) : s[g] === v && !!d.ecg.gen);
+      });
+    });
+  }
+  // Applique l'etat ECG : regenere la phrase si le texte n'a pas ete modifie a la main
+  function applyEcg(newState, force) {
+    const d = current();
+    const prevGen = d.ecg.gen || '';
+    const text = els.ecg.ta.value;
+    const sentence = ecgSentence(newState);
+    newState.gen = sentence;
+    d.ecg = newState;
+    touch(d, '_ecg');
+    if (force || !text.trim()) setField('ecg', sentence);
+    else if (prevGen && text.includes(prevGen)) setField('ecg', text.replace(prevGen, sentence));
+    else {
+      toast('Texte ECG modifié à la main', 'Remplacer', () => setField('ecg', sentence));
+    }
+    refreshEcgControls();
+  }
+  function bindEcg(card) {
+    $('#ecgNormal', card).addEventListener('click', () => {
+      const d = current();
+      const s = ecgState(d);
+      const text = els.ecg.ta.value.trim();
+      const st = { rythme: 'RSR', axe: 'non dévié', fc: s.fc || d.vitals.fc || '', qtc: s.qtc, conduction: [], repol: [], autres: [] };
+      if (text && !(d.ecg.gen && text === d.ecg.gen) && !confirm('Remplacer le texte ECG actuel par un ECG normal ?')) return;
+      applyEcg(st, true);
+      if (!st.fc) $('#ecgFc').focus();
+    });
+    ['ecgFc', 'ecgQtc'].forEach(id => $('#' + id, card).addEventListener('input', ev => {
+      const s = ecgState(current());
+      s[id === 'ecgFc' ? 'fc' : 'qtc'] = ev.target.value.trim();
+      applyEcg(s, false);
+    }));
+    $$('.ecg-tools .chips', card).forEach(box => box.addEventListener('click', ev => {
+      const ch = ev.target.closest('.chip'); if (!ch) return;
+      const s = ecgState(current());
+      const g = box.dataset.g, v = ch.dataset.v;
+      if (Array.isArray(s[g])) {
+        s[g] = s[g].includes(v) ? s[g].filter(x => x !== v) : s[g].concat(v);
+        // ordre stable selon la liste de reference
+        const ref = ECG[g === 'repol' ? 'repol' : g];
+        s[g].sort((a, b) => ref.indexOf(a) - ref.indexOf(b));
+      } else s[g] = v;
+      applyEcg(s, false);
+    }));
   }
 
-  /* ------------------------------------------------------------------ */
-  /* Dossiers                                                            */
-  /* ------------------------------------------------------------------ */
-  const sel = $('#dossierSelect');
-  const labelInput = $('#dossierLabel');
-  function renderDossierBar() {
-    const ids = sortedIds();
-    sel.innerHTML = ids.map(id => {
-      const d = store.dossiers[id];
-      return '<option value="' + id + '">' + escapeHtml(dossierName(d)) + '</option>';
-    }).join('');
-    sel.value = store.current;
-    if (document.activeElement !== labelInput) labelInput.value = current().meta.label || '';
+  /* ---------------- Evolution horodatee ---------------- */
+  function evoLine(x) {
+    const lines = toPlain(x.text).split('\n');
+    lines[0] = hhmm(x.t) + ' : ' + lines[0];
+    return lines.join('\n');
   }
-  sel.addEventListener('change', () => { store.current = sel.value; persist(); fillFromDossier(); window.scrollTo({ top: 0 }); });
-  labelInput.addEventListener('input', () => {
+  function evoText(list) { return list.filter(x => !x.del && x.text.trim()).sort((a, b) => a.t - b.t).map(evoLine).join('\n'); }
+
+  function renderEvo() {
     const d = current();
-    d.meta.label = labelInput.value;
-    touch(d, '_meta');
-    const opt = sel.querySelector('option[value="' + d.id + '"]');
-    if (opt) opt.textContent = dossierName(d);
+    const list = $('#evoList');
+    if (!list) return;
+    const items = d.evo.filter(x => !x.del).sort((a, b) => a.t - b.t);
+    const focusedId = document.activeElement && document.activeElement.closest('.evo-item') ?
+      document.activeElement.closest('.evo-item').dataset.eid : null;
+    // reconstruction en preservant la zone en cours d'edition
+    const existing = {};
+    $$('.evo-item', list).forEach(n => { existing[n.dataset.eid] = n; });
+    const keep = new Set();
+    items.forEach(x => {
+      let node = existing[x.id];
+      if (!node) {
+        node = document.createElement('div');
+        node.className = 'evo-item';
+        node.dataset.eid = x.id;
+        node.innerHTML =
+          '<div class="evo-head"><input type="time" class="evo-time" aria-label="Heure">' +
+          '<span class="evo-state"></span><span class="spacer"></span>' +
+          '<button type="button" class="btn evo-copy">' + ICON.copy + '<span>Copier</span></button>' +
+          '<button type="button" class="icon-btn evo-del" aria-label="Supprimer l\'entrée" title="Supprimer l\'entrée">' + ICON.x + '</button></div>' +
+          '<textarea rows="1" data-min="48" aria-label="Entrée d\'évolution"></textarea>';
+        node.querySelector('textarea').spellcheck = !!settings.spell;
+      }
+      list.appendChild(node); // ordre chronologique
+      keep.add(x.id);
+      const ta = $('textarea', node);
+      if (x.id !== focusedId && ta.value !== x.text) ta.value = x.text;
+      const tm = $('.evo-time', node);
+      const dt = new Date(x.t);
+      const tv = String(dt.getHours()).padStart(2, '0') + ':' + String(dt.getMinutes()).padStart(2, '0');
+      if (document.activeElement !== tm && tm.value !== tv) tm.value = tv;
+      node.classList.toggle('copied', !!x.c);
+      $('.evo-state', node).textContent = x.c ? 'Copié ' + hhmm(x.c) : 'Non copié';
+      autoGrow(ta);
+    });
+    Object.keys(existing).forEach(id => { if (!keep.has(id)) existing[id].remove(); });
+    const fresh = items.filter(x => !x.c && x.text.trim()).length;
+    $('#evoInfo').textContent = items.length ? (items.length + ' entrée' + (items.length > 1 ? 's' : '') + (fresh ? ', ' + fresh + ' non copiée' + (fresh > 1 ? 's' : '') : ', tout est copié')) : 'Aucune entrée';
+    $('#evoCopyNew').disabled = !fresh;
+    refreshCard('evolution');
+    renderNavState();
+  }
+
+  function saveEvo(d) { touch(d, '_evo', 400); }
+  function addEvoEntry(text, fromChip) {
+    const d = current();
+    text = (text || '').trim();
+    if (!text) return;
+    // une pastille complete la derniere entree non copiee de moins de 10 min
+    const last = d.evo.filter(x => !x.del).sort((a, b) => a.t - b.t).pop();
+    if (fromChip && last && !last.c && Date.now() - last.t < 10 * 60 * 1000) {
+      last.text = last.text.replace(/\s+$/, '') + (last.text.trim() ? ', ' : '') + text;
+      last.u = Date.now();
+    } else {
+      d.evo.push({ id: uid(), t: Date.now(), u: Date.now(), text });
+    }
+    saveEvo(d);
+    renderEvo();
+  }
+
+  function bindEvo(card) {
+    const input = $('#evoInput', card);
+    input.addEventListener('input', () => autoGrow(input));
+    $('#evoAddBtn', card).addEventListener('click', () => {
+      if (!input.value.trim()) { input.focus(); return; }
+      addEvoEntry(input.value, false);
+      input.value = '';
+      autoGrow(input);
+      toast('Entrée ajoutée à ' + hhmm());
+    });
+    const list = $('#evoList', card);
+    list.addEventListener('input', ev => {
+      const node = ev.target.closest('.evo-item'); if (!node) return;
+      const d = current();
+      const x = d.evo.find(y => y.id === node.dataset.eid); if (!x) return;
+      if (ev.target.tagName === 'TEXTAREA') {
+        x.text = ev.target.value;
+        autoGrow(ev.target);
+        if (x.c) { x.c = 0; node.classList.remove('copied'); $('.evo-state', node).textContent = 'Modifié'; }
+      } else if (ev.target.classList.contains('evo-time') && ev.target.value) {
+        const [h, m] = ev.target.value.split(':').map(Number);
+        const dt = new Date(x.t); dt.setHours(h, m, 0, 0); x.t = dt.getTime();
+      } else return;
+      x.u = Date.now();
+      saveEvo(d);
+      refreshCard('evolution');
+    });
+    list.addEventListener('click', async ev => {
+      const node = ev.target.closest('.evo-item'); if (!node) return;
+      const d = current();
+      const x = d.evo.find(y => y.id === node.dataset.eid); if (!x) return;
+      if (ev.target.closest('.evo-copy')) {
+        if (!x.text.trim()) { toast('Entrée vide'); return; }
+        if (!await copyText(evoLine(x))) { toast('Copie impossible'); return; }
+        x.c = Date.now(); x.u = Date.now();
+        saveEvo(d); renderEvo();
+        toast('Entrée de ' + hhmm(x.t) + ' copiée');
+      } else if (ev.target.closest('.evo-del')) {
+        if (x.text.trim() && !confirm('Supprimer l\'entrée de ' + hhmm(x.t) + ' ?')) return;
+        x.del = true; x.u = Date.now();
+        saveEvo(d); renderEvo();
+      }
+    });
+    $('#evoCopyNew', card).addEventListener('click', async () => {
+      const d = current();
+      const fresh = d.evo.filter(x => !x.del && !x.c && x.text.trim()).sort((a, b) => a.t - b.t);
+      if (!fresh.length) { toast('Aucune nouvelle entrée'); return; }
+      if (!await copyText(fresh.map(evoLine).join('\n'))) { toast('Copie impossible'); return; }
+      const now = Date.now();
+      fresh.forEach(x => { x.c = now; x.u = now; });
+      saveEvo(d); renderEvo();
+      toast(fresh.length + ' nouvelle' + (fresh.length > 1 ? 's entrées copiées' : ' entrée copiée'));
+    });
+  }
+
+  // Fusion de listes/maps synchronisees : l'element le plus recent (u) gagne
+  function mergeById(localArr, remoteArr) {
+    const map = {};
+    (localArr || []).forEach(x => { map[x.id] = x; });
+    (remoteArr || []).forEach(x => { if (!map[x.id] || (x.u || 0) > (map[x.id].u || 0)) map[x.id] = x; });
+    return Object.values(map);
+  }
+  function mergeMap(localMap, remoteMap) {
+    const out = Object.assign({}, localMap || {});
+    Object.keys(remoteMap || {}).forEach(k => {
+      if (!out[k] || (remoteMap[k].u || 0) > (out[k].u || 0)) out[k] = remoteMap[k];
+    });
+    return out;
+  }
+  function sameMap(a, b) {
+    a = a || {}; b = b || {};
+    const ka = Object.keys(a), kb = Object.keys(b);
+    return ka.length === kb.length && ka.every(k => b[k] && (a[k].u || 0) === (b[k].u || 0));
+  }
+  function sameArr(a, b) {
+    const k = x => x.id + ':' + (x.u || 0);
+    return a.map(k).sort().join('|') === (b || []).map(k).sort().join('|');
+  }
+
+  /* ---------------- Check-list ---------------- */
+  function todoDefs(d) {
+    const custom = Object.keys(d.todo).filter(k => k.startsWith('c_') && d.todo[k].label && !d.todo[k].gone)
+      .map(k => ({ id: k, label: d.todo[k].label, short: d.todo[k].label, icon: window.TODO_CUSTOM_ICON, custom: true }));
+    return TODO.concat(custom);
+  }
+  function renderTodo() {
+    const grid = $('#todoGrid'); if (!grid) return;
+    const d = current();
+    grid.innerHTML = todoDefs(d).map(it => {
+      const st = (d.todo[it.id] || {});
+      const s = st.s || '';
+      return '<div class="todo-tile ' + s + '" data-tid="' + it.id + '">' +
+        '<button type="button" class="todo-main" title="' + escapeHtml(it.label) + '">' +
+          svg(it.icon) + '<span class="tl"><span class="full">' + escapeHtml(it.label) + '</span><span class="abbr">' + escapeHtml(it.short) + '</span></span>' +
+          '<span class="ts">' + (s === 'todo' ? 'À faire' : s === 'done' ? 'Fait' + (st.at ? ' ' + hhmm(st.at) : '') : '') + '</span>' +
+          (st.n && s ? '<span class="tn">' + escapeHtml(st.n) + '</span>' : '') +
+        '</button>' +
+        (s ? '<button type="button" class="todo-note" title="Ajouter une précision" aria-label="Ajouter une précision">' + ICON.pen + '</button>' : '') +
+        (it.custom ? '<button type="button" class="todo-rm" title="Retirer cet élément" aria-label="Retirer">' + ICON.x + '</button>' : '') +
+        '</div>';
+    }).join('');
+    updateBadge();
+    renderNavState();
+  }
+  function setTodo(d, id, patch) {
+    d.todo[id] = Object.assign({}, d.todo[id] || {}, patch, { u: Date.now() });
+    touch(d, '_todo', 300);
+    renderTodo();
+    if ($('#board').open) renderBoard();
+  }
+  function cycleTodo(d, id) {
+    const s = (d.todo[id] || {}).s || '';
+    const next = s === '' ? 'todo' : s === 'todo' ? 'done' : '';
+    setTodo(d, id, { s: next, at: next === 'done' ? Date.now() : 0 });
+  }
+  function bindTodo(card) {
+    $('#todoGrid', card).addEventListener('click', ev => {
+      const tile = ev.target.closest('.todo-tile'); if (!tile) return;
+      const d = current();
+      const id = tile.dataset.tid;
+      if (ev.target.closest('.todo-note')) {
+        const cur = (d.todo[id] || {}).n || '';
+        const n = prompt('Précision (ex : scanner à 15h, avis demandé à 14h10) :', cur);
+        if (n !== null) setTodo(d, id, { n: n.trim().slice(0, 60) });
+      } else if (ev.target.closest('.todo-rm')) {
+        setTodo(d, id, { s: '', gone: true });
+      } else cycleTodo(d, id);
+    });
+    const inp = $('#todoCustom', card);
+    const add = () => {
+      const label = inp.value.trim(); if (!label) return;
+      setTodo(current(), 'c_' + uid().slice(0, 8), { label: label.slice(0, 40), s: 'todo' });
+      inp.value = '';
+    };
+    $('#todoAddBtn', card).addEventListener('click', add);
+    inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); add(); } });
+    $('#todoBoardLink', card).addEventListener('click', openBoard);
+  }
+  function updateBadge() {
+    let n = 0;
+    Object.values(store.dossiers).forEach(d => { Object.values(d.todo || {}).forEach(x => { if (x.s === 'todo' && !x.gone) n++; }); });
+    const b = $('#todoBadge');
+    b.hidden = !n; b.textContent = n > 99 ? '99+' : String(n);
+  }
+
+  /* ---------------- Tableau des patients ---------------- */
+  const board = $('#board');
+  function renderBoard() {
+    const ids = sortedIds();
+    $('#boardList').innerHTML = ids.length ? ids.map(id => {
+      const d = store.dossiers[id];
+      const m = d.meta;
+      const a = ageInfo(m.age);
+      const defs = todoDefs(d);
+      const pills = defs.filter(it => d.todo[it.id] && d.todo[it.id].s)
+        .sort((x, y) => (d.todo[x.id].s === 'todo' ? 0 : 1) - (d.todo[y.id].s === 'todo' ? 0 : 1))
+        .map(it => {
+          const st = d.todo[it.id];
+          return '<button type="button" class="bpill ' + st.s + '" data-tid="' + it.id + '" title="' + escapeHtml(it.label + (st.n ? ' : ' + st.n : '') + (st.s === 'done' ? ' (fait)' : ' (à faire)')) + '">' +
+            svg(it.icon) + '<span>' + escapeHtml(it.short) + (st.n ? ' <i>' + escapeHtml(st.n) + '</i>' : '') + '</span></button>';
+        }).join('');
+      const pending = defs.filter(it => d.todo[it.id] && d.todo[it.id].s === 'todo').length;
+      return '<div class="brow' + (id === store.current ? ' current' : '') + '" data-c="' + colorOf(m) + '" data-id="' + id + '">' +
+        '<button type="button" class="brow-main">' +
+          '<span class="b-loc">' + escapeHtml(m.label || '-') + '</span>' +
+          '<span class="b-who"><b>' + escapeHtml(m.name || 'Patient de ' + hhmm(m.created)) + '</b>' +
+          '<span>' + [sexLabel(m.sex), a.text].filter(Boolean).join(', ') + '</span></span>' +
+          (pending ? '<span class="b-count">' + pending + '</span>' : '') +
+        '</button>' +
+        '<div class="b-pills">' + (pills || '<span class="b-empty">Aucun élément</span>') + '</div>' +
+        '</div>';
+    }).join('') : '<p class="hint">Aucun patient.</p>';
+  }
+  function openBoard() { renderBoard(); if (!board.open) board.showModal(); }
+  $('#boardBtn').addEventListener('click', openBoard);
+  $('#boardList').addEventListener('click', ev => {
+    const row = ev.target.closest('.brow'); if (!row) return;
+    const d = store.dossiers[row.dataset.id]; if (!d) return;
+    const pill = ev.target.closest('.bpill');
+    if (pill) { cycleTodo(d, pill.dataset.tid); if (d.id === store.current) renderTodo(); return; }
+    switchTo(d.id);
+    board.close();
   });
-  $('#newDossierBtn').addEventListener('click', () => {
+  $('#boardNewBtn').addEventListener('click', () => { board.close(); createPatient(); });
+
+  /* ================================================================== */
+  /* Bandeau patient                                                     */
+  /* ================================================================== */
+  const banner = $('#pbanner');
+  const editor = $('#pbEditor');
+  function renderBanner() {
+    const d = current();
+    const m = d.meta;
+    banner.dataset.c = colorOf(m);
+    $('#pbLoc').textContent = m.label || 'Localisation ?';
+    $('#pbLoc').classList.toggle('empty', !m.label);
+    $('#pbName').textContent = m.name || (m.label ? '' : 'Patient de ' + hhmm(m.created));
+    const a = ageInfo(m.age);
+    $('#pbSA').textContent = [m.sex === 'F' ? 'Femme' : m.sex === 'M' ? 'Homme' : '', a.text].filter(Boolean).join(', ') || 'Sexe et âge ?';
+    if (!editor.hidden) fillEditor();
+    document.title = (m.label || m.name ? patientTitle(d) + ' - ' : '') + 'LeSacAUrge';
+  }
+  function fillEditor() {
+    const m = current().meta;
+    const ae = document.activeElement;
+    if (ae !== $('#pLoc')) $('#pLoc').value = m.label || '';
+    if (ae !== $('#pName')) $('#pName').value = m.name || '';
+    if (ae !== $('#pAge')) $('#pAge').value = m.age || '';
+    $$('input[name="psex"]').forEach(r => { r.checked = r.value === (m.sex || ''); });
+  }
+  function toggleEditor(open) {
+    editor.hidden = !open;
+    $('#pbMain').setAttribute('aria-expanded', String(open));
+    if (open) fillEditor();
+    syncHeadVar();
+  }
+  $('#pbMain').addEventListener('click', () => toggleEditor(editor.hidden));
+  $('#pbDone').addEventListener('click', () => toggleEditor(false));
+  function metaInput(key, value) {
+    const d = current();
+    d.meta[key] = value;
+    touch(d, '_meta');
+    renderBanner();
+    if (board.open) renderBoard();
+  }
+  $('#pLoc').addEventListener('input', e => metaInput('label', e.target.value));
+  $('#pName').addEventListener('input', e => metaInput('name', e.target.value));
+  $('#pAge').addEventListener('input', e => metaInput('age', e.target.value));
+  $$('input[name="psex"]').forEach(r => r.addEventListener('change', () => metaInput('sex', r.value)));
+  $('#pAge').addEventListener('keydown', e => { if (e.key === 'Enter') toggleEditor(false); });
+
+  function switchTo(id) {
+    store.current = id;
+    persist();
+    $$('#sections textarea').forEach(t => { if (document.activeElement === t) t.blur(); });
+    fillFromDossier();
+    window.scrollTo({ top: 0 });
+  }
+  function createPatient() {
     newDossier();
     fillFromDossier();
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    toast('Nouveau dossier créé');
-    labelInput.focus(); labelInput.select();
-  });
+    toggleEditor(true);
+    $('#pLoc').focus();
+    toast('Nouveau patient');
+  }
+  $('#newDossierBtn').addEventListener('click', createPatient);
   $('#deleteDossierBtn').addEventListener('click', () => {
     const d = current();
-    if (!isEmpty(d) && !confirm('Supprimer "' + dossierName(d) + '" sur tous les appareils synchronisés ?')) return;
+    if (!isEmpty(d) && !confirm('Supprimer "' + patientTitle(d) + '" sur tous les appareils synchronisés ?')) return;
     deleteDossier(d.id, true);
+    toggleEditor(false);
     fillFromDossier();
-    toast('Dossier supprimé');
+    toast('Patient supprimé');
   });
   function deleteDossier(id, propagate) {
     delete store.dossiers[id];
@@ -476,6 +1022,51 @@
     }
     if (store.current === id) store.current = sortedIds()[0] || null;
     persist();
+    updateBadge();
+  }
+
+  /* ================================================================== */
+  /* Copie                                                               */
+  /* ================================================================== */
+  function sectionText(d, id) {
+    if (id === 'evolution') return evoText(d.evo);
+    return toPlain(d.fields[id] || '');
+  }
+  async function copySection(id) {
+    const e = els[id];
+    const d = current();
+    const text = sectionText(d, id);
+    if (!text) { toast('Encart vide'); return; }
+    if (id === 'ecg' && /\bxx\b/.test(text)) toast('Attention : FC ou QTc non renseigné');
+    const ok = await copyText(text);
+    if (!ok) { toast('Copie impossible : sélectionnez le texte manuellement'); return; }
+    if (id === 'evolution') {
+      const now = Date.now();
+      d.evo.forEach(x => { if (!x.del && !x.c) { x.c = now; x.u = now; } });
+      saveEvo(d); renderEvo();
+    } else {
+      copiedFlags[store.current] = copiedFlags[store.current] || {};
+      copiedFlags[store.current][id] = text;
+    }
+    const btn = $('.copy-btn', e.card);
+    const label = $('span', btn).textContent;
+    btn.classList.add('done');
+    btn.innerHTML = ICON.check + '<span>Copié</span>';
+    setTimeout(() => { btn.classList.remove('done'); btn.innerHTML = ICON.copy + '<span>' + label + '</span>'; }, 1400);
+    refreshCard(id);
+    if (!(id === 'ecg' && /\bxx\b/.test(text))) toast(e.sec.title + ' copié');
+  }
+  async function copyAll() {
+    const d = current();
+    const blocks = [];
+    for (const sec of visibleSections()) {
+      const t = sectionText(d, sec.id);
+      if (!t) continue;
+      blocks.push(settings.titles ? toPlain(sec.title) + ' :\n' + t : t);
+    }
+    if (!blocks.length) { toast('Observation vide'); return; }
+    const ok = await copyText(blocks.join('\n\n'));
+    toast(ok ? 'Observation complète copiée' : 'Copie impossible');
   }
 
   function purgeExpired() {
@@ -494,24 +1085,48 @@
     if (changed) { persist(); fillFromDossier(); }
   }
 
-  /* ------------------------------------------------------------------ */
+  /* ================================================================== */
   /* Synchronisation                                                     */
-  /* ------------------------------------------------------------------ */
+  /* ================================================================== */
   const SYNC_LABEL = { off: 'Local', connecting: 'Connexion', online: 'Synchronisé', offline: 'Hors ligne', error: 'Erreur' };
   const sync = new window.LSAUSync.SyncEngine({
     getDossiers: () => store.dossiers,
     getTombstones: () => store.tombstones,
+    getValue: (d, field) => {
+      if (field === '_meta') {
+        const m = Object.assign({}, d.meta);
+        delete m.auto;
+        if (!settings.syncIdent) delete m.name;
+        return m;
+      }
+      if (field.startsWith('_')) return d[field.slice(1)];
+      return d.fields[field] == null ? '' : d.fields[field];
+    },
     applyField: (id, field, value, t) => {
       if (store.tombstones[id]) return;
       let d = store.dossiers[id];
-      if (!d) {
-        d = store.dossiers[id] = { id, meta: { label: '', created: t }, fields: {}, vitals: {}, t: {} };
-      }
-      if (field === '_meta') { d.meta = Object.assign({ label: '', created: t }, value || {}); delete d.meta.auto; }
-      else if (field === '_vitals') d.vitals = value || {};
+      if (!d) d = store.dossiers[id] = fix({ id, meta: { label: '', created: t }, t: {} });
+      let repush = false;
+      if (field === '_meta') {
+        const name = d.meta.name;
+        d.meta = Object.assign({ label: '', created: t }, value || {});
+        if (!('name' in (value || {}))) d.meta.name = name || '';
+        delete d.meta.auto;
+      } else if (field === '_evo') {
+        const merged = mergeById(d.evo, Array.isArray(value) ? value : []);
+        repush = !sameArr(merged, value);
+        d.evo = merged;
+      } else if (field === '_todo') {
+        const merged = mergeMap(d.todo, value && typeof value === 'object' ? value : {});
+        repush = !sameMap(merged, value);
+        d.todo = merged;
+      } else if (field === '_vitals') d.vitals = value || {};
+      else if (field === '_ecg') d.ecg = value && typeof value === 'object' ? value : {};
+      else if (field === 'evolution') { /* ancienne version : ignore */ }
       else d.fields[field] = typeof value === 'string' ? value : '';
       d.t[field] = t;
       persist();
+      if (repush) touch(d, field, 300);
       scheduleRemoteRefresh(id, field);
     },
     applyDelete: (id) => {
@@ -519,8 +1134,8 @@
       const wasCurrent = store.current === id;
       deleteDossier(id, false);
       store.tombstones[id] = store.tombstones[id] || Date.now();
-      if (wasCurrent) { fillFromDossier(); toast('Dossier supprimé depuis un autre appareil'); }
-      else renderDossierBar();
+      if (wasCurrent) { fillFromDossier(); toast('Patient supprimé depuis un autre appareil'); }
+      if (board.open) renderBoard();
     },
     onInitial: () => {
       const cur = store.dossiers[store.current];
@@ -541,34 +1156,44 @@
   });
 
   let remoteTimer = null;
-  const remotePending = new Set();
+  const remoteQueue = new Set();
   function scheduleRemoteRefresh(id, field) {
-    remotePending.add(id + '|' + field);
+    remoteQueue.add(id + '|' + field);
     clearTimeout(remoteTimer);
     remoteTimer = setTimeout(() => {
       const curId = store.current;
-      let barDirty = false;
-      remotePending.forEach(k => {
+      remoteQueue.forEach(k => {
         const [did, f] = k.split('|');
-        if (f === '_meta') barDirty = true;
-        if (did !== curId) { barDirty = true; return; }
-        if (f === '_vitals') { fillFromDossier(); return; }
-        const e = els[f];
-        if (!e) return;
-        const v = store.dossiers[did].fields[f] || '';
-        if (e.ta.value !== v) {
-          const focused = document.activeElement === e.ta;
-          const pos = focused ? e.ta.selectionStart : 0;
+        if (did !== curId || !store.dossiers[did]) return;
+        if (f === '_meta') renderBanner();
+        else if (f === '_vitals' || f === '_ecg') { if (els.examen) fillVitals(); if (els.ecg) refreshEcgControls(); }
+        else if (f === '_evo') renderEvo();
+        else if (f === '_todo') renderTodo();
+        else {
+          const e = els[f];
+          if (!e || !e.ta) return;
+          const v = store.dossiers[did].fields[f] || '';
+          if (e.ta.value === v) return;
+          // Ne jamais modifier une zone en cours de saisie (ferme le clavier
+          // et les suggestions d'orthographe sur mobile) : application a la sortie.
+          if (document.activeElement === e.ta) { pendingRemote.add(f); return; }
           e.ta.value = v;
-          if (focused) e.ta.setSelectionRange(Math.min(pos, v.length), Math.min(pos, v.length));
           autoGrow(e.ta);
+          refreshCard(f);
         }
-        refreshCard(f);
       });
-      remotePending.clear();
+      remoteQueue.clear();
       if (!store.dossiers[store.current]) fillFromDossier();
-      else if (barDirty) renderDossierBar();
+      updateBadge();
+      if (board.open) renderBoard();
     }, 60);
+  }
+  function fillVitals() {
+    const d = current();
+    for (const v of VITALS) {
+      const inp = $('#v_' + v.id);
+      if (inp && document.activeElement !== inp) inp.value = d.vitals[v.id] || '';
+    }
   }
 
   function startSync() {
@@ -577,18 +1202,14 @@
     } else sync.stop();
   }
 
-  /* ------------------------------------------------------------------ */
+  /* ================================================================== */
   /* Reglages                                                            */
-  /* ------------------------------------------------------------------ */
+  /* ================================================================== */
   const dlg = $('#settings');
   function applyTheme() {
     if (settings.theme === 'auto') document.documentElement.removeAttribute('data-theme');
     else document.documentElement.setAttribute('data-theme', settings.theme);
-    const dark = settings.theme === 'dark' ||
-      (settings.theme === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    $('meta[name="theme-color"]').setAttribute('content', dark ? '#0f3666' : '#174a87');
   }
-
   function pairingUrl() {
     const base = location.href.split('#')[0];
     return base + '#pair=' + encodeURIComponent(window.LSAUSync.normalizeCode(settings.code)) +
@@ -605,19 +1226,20 @@
     $('#qr').innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
     wrap.hidden = false;
   }
-
   function openSettings() {
     $('#dbUrl').value = settings.dbUrl || '';
     $('#pairCode').value = settings.code ? window.LSAUSync.formatCode(settings.code) : '';
     $('#optTitles').checked = !!settings.titles;
     $('#optAscii').checked = !!settings.ascii;
     $('#optMarkCopied').checked = !!settings.markCopied;
+    $('#optSpell').checked = !!settings.spell;
+    $('#optSyncIdent').checked = !!settings.syncIdent;
     $('#retention').value = String(settings.retentionH);
     $$('input[name="theme"]').forEach(r => { r.checked = r.value === settings.theme; });
     $('#sectionToggles').innerHTML = SECTIONS.map(s =>
       '<label class="check"><input type="checkbox" data-sec="' + s.id + '"' + (settings.hidden.includes(s.id) ? '' : ' checked') + '> ' + escapeHtml(s.title) + '</label>').join('');
     const cs = $('#chipSection');
-    cs.innerHTML = SECTIONS.filter(s => s.id !== 'examen').map(s => '<option value="' + s.id + '">' + escapeHtml(s.title) + '</option>').join('');
+    cs.innerHTML = SECTIONS.filter(s => s.id !== 'examen' && s.id !== 'ecg').map(s => '<option value="' + s.id + '">' + escapeHtml(s.title) + '</option>').join('');
     cs.value = 'atcd_med';
     $('#chipEditor').value = chipsFor(cs.value).join('\n');
     $('#appVersion').textContent = CFG.version || '';
@@ -659,6 +1281,11 @@
   $('#optTitles').addEventListener('change', e => { settings.titles = e.target.checked; persistSettings(); });
   $('#optAscii').addEventListener('change', e => { settings.ascii = e.target.checked; persistSettings(); Object.keys(els).forEach(refreshCard); });
   $('#optMarkCopied').addEventListener('change', e => { settings.markCopied = e.target.checked; persistSettings(); Object.keys(els).forEach(refreshCard); });
+  $('#optSpell').addEventListener('change', e => { settings.spell = e.target.checked; persistSettings(); applySpell(); $$('.evo-item textarea').forEach(t => { t.spellcheck = settings.spell; }); });
+  $('#optSyncIdent').addEventListener('change', e => {
+    settings.syncIdent = e.target.checked; persistSettings();
+    if (settings.syncIdent) Object.values(store.dossiers).forEach(d => { if (d.meta.name) touch(d, '_meta', 0); });
+  });
   $('#retention').addEventListener('change', e => { settings.retentionH = Number(e.target.value); persistSettings(); purgeExpired(); });
   $$('input[name="theme"]').forEach(r => r.addEventListener('change', () => { settings.theme = r.value; persistSettings(); applyTheme(); }));
   $('#sectionToggles').addEventListener('change', e => {
@@ -680,9 +1307,9 @@
     persistSettings(); renderSections(); toast('Pastilles par défaut rétablies');
   });
 
-  /* ------------------------------------------------------------------ */
+  /* ================================================================== */
   /* Divers                                                              */
-  /* ------------------------------------------------------------------ */
+  /* ================================================================== */
   let toastTimer = null;
   function toast(msg, actionLabel, action) {
     const t = $('#toast');
@@ -691,7 +1318,7 @@
     if (actionLabel) {
       const b = document.createElement('button');
       b.textContent = actionLabel; b.type = 'button';
-      b.style.cssText = 'margin-left:12px;background:none;border:0;color:#9cc6ff;font-weight:700;cursor:pointer;pointer-events:auto';
+      b.className = 'toast-action';
       b.addEventListener('click', () => { action(); t.classList.remove('show'); });
       t.append(b);
       t.style.pointerEvents = 'auto';
@@ -710,16 +1337,21 @@
       if (id) { e.preventDefault(); copySection(id); }
     }
   });
-  window.addEventListener('resize', updateChipOverflow);
+  let lastW = window.innerWidth;
+  window.addEventListener('resize', () => {
+    // l'ouverture du clavier mobile ne change que la hauteur : on ne recalcule rien
+    if (window.innerWidth === lastW) return;
+    lastW = window.innerWidth;
+    updateChipOverflow();
+    $$('textarea').forEach(autoGrow);
+  });
   window.addEventListener('online', () => { if (settings.syncOn) startSync(); });
   window.addEventListener('storage', ev => {
-    // autre onglet du meme navigateur
     if (ev.key === DATA_KEY && ev.newValue) {
-      try { Object.assign(store, JSON.parse(ev.newValue)); fillFromDossier(); } catch (e) {}
+      try { Object.assign(store, JSON.parse(ev.newValue)); Object.values(store.dossiers).forEach(fix); fillFromDossier(); } catch (e) {}
     }
   });
 
-  // Jumelage par lien / QR code : #pair=CODE&db=URL
   function handlePairingHash() {
     if (!location.hash.startsWith('#pair=')) return;
     const p = new URLSearchParams(location.hash.slice(1));
@@ -748,5 +1380,5 @@
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
 
-  window.LSAU = { toPlain, store, settings }; // pour les tests
+  window.LSAU = { toPlain, store, settings, ageInfo, colorOf, ecgSentence }; // pour les tests
 })();

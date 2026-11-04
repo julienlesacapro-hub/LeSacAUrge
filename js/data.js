@@ -4,19 +4,20 @@
 
 // Ordre et libelles des encarts. "sep" = separateur insere par les pastilles.
 window.SECTIONS = [
-  { id: 'motif',       title: 'Motif de consultation',   sep: ', ',  optional: true,
+  { id: 'motif',       title: 'Motif de consultation',   short: 'Motif',      sep: ', ',  optional: true,
     placeholder: 'Ex : douleur thoracique depuis 2 h' },
-  { id: 'anamnese',    title: 'Anamnèse',                sep: ' ',
+  { id: 'anamnese',    title: 'Anamnèse',                short: 'Anamnèse',   sep: ' ',
     placeholder: 'Histoire de la maladie, chronologie, symptômes associés...' },
-  { id: 'atcd_med',    title: 'Antécédents médicaux',    sep: ', ' },
-  { id: 'atcd_chir',   title: 'Antécédents chirurgicaux', sep: ', ' },
-  { id: 'traitements', title: 'Traitements habituels',   sep: '\n' },
-  { id: 'allergies',   title: 'Allergies',               sep: ', ' },
-  { id: 'examen',      title: 'Examen clinique',         sep: '\n' },
-  { id: 'hypotheses',  title: 'Hypothèses diagnostiques', sep: '\n' },
-  { id: 'cat',         title: 'Conduite à tenir',        sep: '\n' },
-  { id: 'evolution',   title: 'Évolution',               sep: '\n' },
-  { id: 'conclusion',  title: 'Conclusion',              sep: '\n' }
+  { id: 'atcd_med',    title: 'Antécédents médicaux',    short: 'ATCD méd.',  sep: ', ' },
+  { id: 'atcd_chir',   title: 'Antécédents chirurgicaux', short: 'ATCD chir.', sep: ', ' },
+  { id: 'traitements', title: 'Traitements habituels',   short: 'Traitements', sep: '\n' },
+  { id: 'allergies',   title: 'Allergies',               short: 'Allergies',  sep: ', ' },
+  { id: 'examen',      title: 'Examen clinique',         short: 'Examen',     sep: '\n' },
+  { id: 'hypotheses',  title: 'Hypothèses diagnostiques', short: 'Hypothèses', sep: '\n' },
+  { id: 'ecg',         title: 'ECG',                     short: 'ECG',        sep: '\n' },
+  { id: 'cat',         title: 'Conduite à tenir',        short: 'CAT',        sep: '\n' },
+  { id: 'evolution',   title: 'Évolution',               short: 'Évolution',  sep: '\n' },
+  { id: 'conclusion',  title: 'Conclusion',              short: 'Conclusion', sep: '\n' }
 ];
 
 // Pastilles preremplies (modifiables dans les reglages).
@@ -125,3 +126,47 @@ window.VITALS = [
   { id: 'eva',  label: 'EVA',   unit: '/10',  ph: '0', mode: 'numeric' },
   { id: 'gly',  label: 'Glyc',  unit: 'g/L',  ph: '1,00', mode: 'decimal' }
 ];
+
+// ECG : phrase normale generee a partir de ces choix.
+window.ECG = {
+  rhythms: ['RSR', 'Tachycardie sinusale', 'Bradycardie sinusale', 'FA', 'Flutter atrial',
+            'Tachycardie jonctionnelle', 'Rythme électroentraîné'],
+  axes: ['non dévié', 'gauche', 'droit'],
+  conduction: ['BAV 1', 'BAV 2 Mobitz 1', 'BAV 2 Mobitz 2', 'BAV 3', 'BBD complet', 'BBD incomplet',
+               'BBG complet', 'HBAG', 'HBPG', 'Préexcitation'],
+  repol: ['Sus-décalage du segment ST', 'Sous-décalage du segment ST', 'Ondes T négatives',
+          'Ondes T amples et pointues', 'Troubles de repolarisation aspécifiques'],
+  autres: ['ESV', 'ESA', 'Onde Q de nécrose', 'HVG', 'Microvoltage', 'Aspect S1Q3']
+};
+
+// Check-list : elements a faire / a verifier.
+// icon = chemins SVG (grille 24 x 24, trait).
+window.TODO_ITEMS = [
+  { id: 'reeval', label: 'Réévaluation clinique', short: 'Réév.',
+    icon: '<path d="M5 3v5a4 4 0 0 0 8 0V3"/><path d="M9 12v2a5 5 0 0 0 10 0v-3"/><circle cx="19" cy="9" r="2"/>' },
+  { id: 'bio', label: 'Biologie en attente', short: 'Bio',
+    icon: '<path d="M8 3h8"/><path d="M9.5 3v14.5a2.5 2.5 0 0 0 5 0V3"/><path d="M9.5 12h5"/>' },
+  { id: 'imagerie', label: 'Imagerie', short: 'Imagerie',
+    icon: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 7v10M9 9h6M8.5 12h7M9 15h6"/>' },
+  { id: 'ecg', label: 'ECG', short: 'ECG',
+    icon: '<path d="M2 12h4l2-5 4 10 2-5h8"/>' },
+  { id: 'ttt', label: 'Traitement', short: 'TTT',
+    icon: '<path d="M10.5 20.5a4.95 4.95 0 0 1-7-7l6-6a4.95 4.95 0 0 1 7 7z"/><path d="M8.5 8.5l7 7"/>' },
+  { id: 'scope', label: 'Surveillance / scope', short: 'Scope',
+    icon: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M6 11h3l1.5-3 3 6 1.5-3H18M9 20h6M12 16v4"/>' },
+  { id: 'cardio', label: 'Avis cardiologique', short: 'Cardio',
+    icon: '<path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.5-7 10-7 10z"/>' },
+  { id: 'chir', label: 'Avis chirurgical', short: 'Chir',
+    icon: '<path d="M3 21l8.5-8.5"/><path d="M11.5 12.5l2.5 2.5L21 5a2.1 2.1 0 0 0-3-3z"/>' },
+  { id: 'neuro', label: 'Avis neurologique', short: 'Neuro',
+    icon: '<path d="M9 21v-3H7a2 2 0 0 1-2-2v-3l-2-1 2-3a7 7 0 0 1 14 2c0 3-1.5 4.5-3 5.5V21"/>' },
+  { id: 'avis', label: 'Autre avis spécialisé', short: 'Avis',
+    icon: '<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>' },
+  { id: 'lit', label: 'Recherche de lit', short: 'Lit',
+    icon: '<path d="M3 18V6M3 14h18v4M21 14v-3a3 3 0 0 0-3-3h-7v6"/><circle cx="7" cy="10.5" r="2"/>' },
+  { id: 'famille', label: 'Appel famille / médecin traitant', short: 'Appel',
+    icon: '<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/>' },
+  { id: 'papiers', label: 'Documents de sortie', short: 'Papiers',
+    icon: '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/>' }
+];
+window.TODO_CUSTOM_ICON = '<path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="7.5" r="1.5"/>';
