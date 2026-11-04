@@ -44,6 +44,8 @@
     hidden: [], chips: {}, dbUrl: CFG.firebaseDatabaseUrl || '', code: '', syncOn: false,
     spell: true, syncIdent: false
   }, load(SET_KEY, {}));
+  // adresse par defaut (config.js) si aucune n'a ete saisie sur cet appareil
+  if (!settings.dbUrl && CFG.firebaseDatabaseUrl) settings.dbUrl = CFG.firebaseDatabaseUrl;
 
   const store = Object.assign({ dossiers: {}, current: null, tombstones: {} }, load(DATA_KEY, {}));
   const copiedFlags = {}; // local : { dossierId: { sectionId: texteCopie } }

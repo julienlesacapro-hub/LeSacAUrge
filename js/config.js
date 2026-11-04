@@ -5,5 +5,5 @@
    ©2026 LESACA Julien - Tous droits reserves. */
 window.LSAU_CONFIG = {
   version: '1.1.0',
-  firebaseDatabaseUrl: ''
+  firebaseDatabaseUrl: 'https://lesacaurge-default-rtdb.europe-west1.firebasedatabase.app'
 };
