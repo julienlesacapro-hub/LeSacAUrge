@@ -10,22 +10,32 @@ copie en **texte brut** d'un clic dans le logiciel d'observation.
 
 ## Fonctions
 
+- **Bandeau patient toujours visible** (localisation, identité, sexe, âge), coloré :
+  rose femme, bleu homme, vert mineur (prioritaire), gris sexe non renseigné.
+  Toucher le bandeau pour modifier ; bouton + pour un nouveau patient.
+- **Barre de navigation** entre les encarts, toujours visible ; la pastille active suit
+  le défilement, un point indique les encarts remplis.
 - Encarts : Motif (masquable), Anamnèse, Antécédents médicaux, Antécédents chirurgicaux,
-  Traitements habituels, Allergies, Examen clinique, Hypothèses diagnostiques,
+  Traitements habituels, Allergies, Examen clinique, Hypothèses diagnostiques, **ECG**,
   Conduite à tenir, Évolution, Conclusion.
 - Un bouton **Copier** par encart + **Tout copier** (Ctrl+Maj+C) ; raccourcis Alt+1 à Alt+9.
-- Copie en texte brut : guillemets typographiques, tirets longs, points de suspension,
-  espaces insécables, puces et émojis normalisés ou supprimés ; œ devient oe.
+- Copie en texte brut (guillemets, tirets, puces, émojis normalisés ; œ devient oe).
   Option « compatibilité stricte » qui retire aussi les accents.
-- Pastilles préremplies (ATCD, allergies, traitements, hypothèses, CAT, évolution,
-  conclusion), activables/désactivables d'un toucher, personnalisables dans les réglages.
-- Examen clinique : case « examen normal complet » ou sélection par appareil
-  (neurologique, hémodynamique, pulmonaire, cardiovasculaire, abdominal, ganglionnaire,
-  cutané), saisie des constantes insérées en une ligne.
-- Plusieurs dossiers simultanés (libellé non identifiant, ex. « Box 4 »), horodatage
-  dans l'évolution, suppression automatique des dossiers inactifs (12 h, 24 h, 3 j).
+- Pastilles préremplies, activables d'un toucher, personnalisables dans les réglages.
+- Examen clinique : case « examen normal complet » ou sélection par appareil, constantes.
+- **ECG** : bouton « ECG normal » (« RSR d'axe non dévié, à xx bpm, sans trouble de la
+  conduction ni de la repolarisation, QTc à xx ms. »), saisie FC et QTc, anomalies à
+  cocher (rythme, axe, conduction, repolarisation, autres) qui réécrivent la phrase.
+  Si le texte a été modifié à la main, il n'est jamais écrasé sans confirmation.
+- **Évolution horodatée** : chaque entrée a son heure et son bouton Copier ;
+  « Copier les nouvelles » ne copie que les entrées pas encore copiées.
+- **Check-list** par patient (réévaluation, biologie, imagerie, ECG, traitement, scope,
+  avis cardio / chir / neuro / autre, lit, appel, documents de sortie, éléments libres) :
+  à faire (orange) puis fait (vert). Vue « Patients en cours » (icône en haut, avec le
+  nombre de tâches à faire) regroupant tous les patients et leurs icônes.
 - Fonctionne hors ligne, thème clair/sombre, installable sur l'écran d'accueil.
 - Synchronisation téléphone et ordinateur, **chiffrée de bout en bout**.
+  L'identité (nom) n'est synchronisée que si l'option est activée dans les réglages.
 
 ## Installation (hébergement GitHub Pages)
 
@@ -58,8 +68,9 @@ dans le fragment `#` de l'URL, qui n'est pas transmis au serveur web.
 ## Avertissement réglementaire
 
 Ni cette application ni Firebase ne sont certifiés « Hébergeur de données de santé »
-(HDS, article L.1111-8 du Code de la santé publique). Ne saisissez aucune donnée
-identifiante (nom, date de naissance, IPP...). Vérifiez la politique de sécurité de
+(HDS, article L.1111-8 du Code de la santé publique). Le bandeau permet de saisir
+l'identité du patient : elle reste par défaut sur l'appareil où elle est saisie et
+n'est envoyée (chiffrée) que si l'option correspondante est activée. Vérifiez la politique de sécurité de
 votre établissement avant d'utiliser un appareil personnel ou un service cloud.
 
 ## Structure

@@ -194,7 +194,8 @@
     async push(id, field) {
       const d = this.hooks.getDossiers()[id];
       if (!d || !this.base) return;
-      const value = field === '_meta' ? d.meta : (field === '_vitals' ? d.vitals : d.fields[field]);
+      const value = this.hooks.getValue(d, field);
+      if (value === undefined) return; // champ non synchronise
       const t = (d.t && d.t[field]) || Date.now();
       try {
         const node = await encryptValue(this.key, value == null ? '' : value);

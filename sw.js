@@ -1,6 +1,6 @@
 /* LeSacAUrge - service worker (fonctionnement hors ligne)
    ©2026 LESACA Julien - Tous droits reserves. */
-const CACHE = 'lsau-v1.0.0';
+const CACHE = 'lsau-v1.1.0';
 const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'css/styles.css',
   'js/config.js', 'js/data.js', 'js/sync.js', 'js/app.js', 'js/vendor/qrcode.js',
