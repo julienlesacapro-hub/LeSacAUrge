@@ -57,7 +57,9 @@ Backend : Firebase Realtime Database (offre gratuite Spark), accédée par son A
    code > Activer. Un QR code s'affiche.
 4. Téléphone : scanner le QR code avec l'appareil photo > l'application s'ouvre jumelée.
 
-L'adresse peut être pré-remplie pour tous les appareils dans `js/config.js`.
+L'adresse de la base du projet (`https://lesacaurge-default-rtdb.europe-west1.firebasedatabase.app`)
+est pré-remplie sur tous les appareils via `js/config.js` : il suffit de générer un code
+sur l'ordinateur puis de scanner le QR code avec le téléphone.
 
 Sécurité : chaque texte est chiffré dans le navigateur (AES-GCM 256, clé dérivée du
 code de jumelage par PBKDF2-SHA256, 150 000 itérations). Le serveur ne stocke que des
