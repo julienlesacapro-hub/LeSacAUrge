@@ -225,6 +225,7 @@
       const now = Date.now();
       const remoteD = this.mirror.d || {};
       for (const id of Object.keys(remoteD)) {
+        if (id.charAt(0) === '_') continue; // reglages synchronises (_cfg) : jamais purges
         const ts = Object.values(remoteD[id] || {}).map(n => (n && n.t) || 0);
         const last = ts.length ? Math.max.apply(null, ts) : 0;
         if (now - last > maxAgeMs) {

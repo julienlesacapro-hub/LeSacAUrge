@@ -1,0 +1,5 @@
+== {{langue|fr}} ==
+=== {{S|nom|fr|flexion}} ===
+{{fr-rég|se.fa.le|s=céphalée}}
+'''céphalées''' {{pron|se.fa.le|fr}} {{f}}
+# ''Pluriel de'' [[céphalée]].

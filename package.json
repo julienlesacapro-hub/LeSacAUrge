@@ -1,0 +1,8 @@
+{
+  "name": "lesacaurge",
+  "private": true,
+  "description": "Outils de développement de LeSacAUrge (l'application elle-même n'a aucune dépendance).",
+  "scripts": {
+    "test": "node tests/pipeline.test.js && node tests/lexique.test.js"
+  }
+}

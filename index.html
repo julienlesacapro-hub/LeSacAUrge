@@ -16,7 +16,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png">
   <link rel="icon" type="image/png" sizes="64x64" href="icons/icon-64.png">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
-  <link rel="stylesheet" href="css/styles.css?v=1.1.1">
+  <link rel="stylesheet" href="css/styles.css?v=1.2.0">
 </head>
 <body>
   <div class="sticky-head" id="stickyHead">
@@ -88,6 +88,41 @@
     <p class="copyright">©2026 LESACA Julien Tous droits réservés.</p>
   </footer>
 
+  <div class="interim" id="interim" aria-live="polite" hidden></div>
+
+  <div class="def-bubble" id="defBubble" role="dialog" aria-live="polite" hidden>
+    <div class="def-head"><strong id="defTitle"></strong><span class="def-kind" id="defKind"></span>
+      <button type="button" class="icon-btn def-close" id="defClose" aria-label="Fermer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <div class="def-body" id="defBody"></div>
+    <div class="def-foot" id="defFoot"></div>
+  </div>
+
+  <div class="snip-menu" id="snipMenu" role="menu" hidden>
+    <p class="snip-where" id="snipWhere"></p>
+    <ul id="snipMenuList"></ul>
+    <div class="snip-menu-foot">
+      <button type="button" class="link-btn" id="snipFromSelBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Créer depuis la sélection</button>
+      <button type="button" class="link-btn" id="snipManageBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>Gérer</button>
+    </div>
+  </div>
+
+  <footer class="dock" id="dock">
+    <div class="dock-status">
+      <span class="dict-where" id="dictWhere"></span>
+      <button type="button" class="dict-info" id="dictInfo" title="Commandes vocales"><span id="dictState"></span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6M12 17h.01"/></svg></button>
+    </div>
+    <div class="dock-in">
+      <button class="dock-btn" id="checkBtn" type="button" title="Vérifier l'orthographe et la grammaire de l'encart"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16l4-11 4 11M5.5 12h5"/><path d="M13 16l3 3 5-7"/></svg><span>Vérifier</span></button>
+      <button class="dock-btn" id="snipBtn" type="button" title="Insérer un texte type" aria-haspopup="menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h4"/></svg><span>Textes</span></button>
+      <button class="mic" id="micBtn" type="button" aria-label="Démarrer la dictée" title="Dictée (Alt+D)">
+        <span class="ic-mic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8"/></svg></span><span class="ic-stop"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg></span><span class="ring"></span>
+      </button>
+      <button class="dock-btn" id="tidyBtn" type="button" title="Mise en forme du texte dicté au clavier (commandes, lexique, typographie)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h7"/><path d="M17 14l1.5 3 3 1.5-3 1.5-1.5 3-1.5-3-3-1.5 3-1.5z"/></svg><span class="lbl-long">Mise en forme</span><span class="lbl-short">Forme</span></button>
+      <button class="dock-btn" id="defBtn" type="button" title="Définition du mot sélectionné"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19a2 2 0 0 1 2-2h13"/></svg><span>Définition</span></button>
+      <div class="dock-btn drag-all" id="dragAllBtn" draggable="true" role="button" tabindex="0" title="Glisser l'observation complète vers le logiciel"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="6" r="1.3"/><circle cx="15" cy="6" r="1.3"/><circle cx="9" cy="12" r="1.3"/><circle cx="15" cy="12" r="1.3"/><circle cx="9" cy="18" r="1.3"/><circle cx="15" cy="18" r="1.3"/></svg><span>Glisser</span></div>
+    </div>
+  </footer>
+
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <dialog id="settings" class="modal">
@@ -134,6 +169,56 @@
         <label class="check"><input type="checkbox" id="optTitles"> Inclure les titres dans « Tout copier »</label>
         <label class="check"><input type="checkbox" id="optAscii"> Mode compatibilité stricte (supprime les accents)</label>
         <label class="check"><input type="checkbox" id="optMarkCopied"> Marquer les encarts déjà copiés</label>
+      </section>
+
+      <section class="set-block">
+        <h3>Dictée vocale</h3>
+        <div class="field"><label for="dEngine">Moteur de reconnaissance</label>
+          <select id="dEngine">
+            <option value="auto">Automatique</option>
+            <option value="browser">Navigateur (Chrome, Edge, Safari)</option>
+            <option value="cloud">API de transcription (Voxtral / Whisper)</option>
+            <option value="keyboard">Dictée du clavier du téléphone</option>
+          </select></div>
+        <p class="hint" id="dEngineInfo"></p>
+        <div id="dCloudCfg" class="sub">
+          <div class="field"><label for="dCloudProvider">Fournisseur</label>
+            <select id="dCloudProvider"><option value="mistral">Mistral (Voxtral)</option><option value="openai">Compatible OpenAI (Whisper, serveur local…)</option></select></div>
+          <div class="field"><label for="dCloudEndpoint">Adresse de l'API</label><input id="dCloudEndpoint" type="url" spellcheck="false"></div>
+          <div class="field"><label for="dCloudModel">Modèle</label><input id="dCloudModel" type="text" spellcheck="false"></div>
+          <div class="field"><label for="dCloudKey">Clé d'API</label><input id="dCloudKey" type="password" autocomplete="off" spellcheck="false" placeholder="conservée sur cet appareil uniquement"></div>
+          <p class="hint warn">L'audio est envoyé au fournisseur choisi. Aucun de ces services n'est, à ma connaissance, certifié HDS : ne dictez pas d'éléments identifiants du patient sans l'accord de votre établissement.</p>
+        </div>
+        <label class="check"><input type="checkbox" id="dCap"> Majuscule automatique en début de phrase</label>
+        <p class="hint">La dictée s'écrit dans l'encart affiché en bas de l'écran (dernier encart touché, ou encart visible). Dites « encart examen », « aller à l'évolution »… pour changer d'encart. <button type="button" class="link-inline" id="cmdHelpBtn">Liste des commandes vocales</button></p>
+      </section>
+
+      <section class="set-block">
+        <h3>Dictionnaire personnel</h3>
+        <p class="hint">Une règle par ligne : <code>ce qui est dit = ce qui doit être écrit</code>. Prioritaire sur le lexique intégré, synchronisé entre vos appareils. Les mots écrits ici ne sont pas signalés par la vérification.</p>
+        <textarea id="dictEditor" rows="5" spellcheck="false" placeholder="saturation = SpO2&#10;doliprane = Doliprane"></textarea>
+        <button class="btn" id="saveDictBtn" type="button">Enregistrer</button>
+      </section>
+
+      <section class="set-block">
+        <h3>Textes types</h3>
+        <p class="hint" id="snipSummary"></p>
+        <button class="btn btn-primary" id="openSnipMgrBtn" type="button">Gérer les textes types</button>
+      </section>
+
+      <section class="set-block">
+        <h3>Lexique médical intégré</h3>
+        <label class="check"><input type="checkbox" id="dMedFix"> Corriger la dictée avec le lexique médical (accents, sigles, médicaments, mots coupés)</label>
+        <label class="check"><input type="checkbox" id="dDefBubble"> Afficher la définition d'un mot sélectionné</label>
+        <label class="check"><input type="checkbox" id="dDefOnline"> Chercher les définitions en ligne (Wiktionnaire, Wikipédia) : seul le mot est envoyé</label>
+        <p class="hint" id="medStats"></p>
+      </section>
+
+      <section class="set-block">
+        <h3>Vérification orthographique et grammaticale</h3>
+        <p class="hint">Le bouton « Vérifier » utilise LanguageTool (logiciel libre) : le texte de l'encart est envoyé au serveur ci-dessous. Pour garder le texte dans votre réseau, indiquez l'adresse d'un serveur LanguageTool auto-hébergé.</p>
+        <div class="field"><label for="dLtUrl">Serveur LanguageTool</label><input id="dLtUrl" type="url" spellcheck="false"></div>
+        <label class="check"><input type="checkbox" id="dLtPicky"> Mode exigeant (règles de style supplémentaires)</label>
       </section>
 
       <section class="set-block">
@@ -212,6 +297,47 @@
     </div>
   </dialog>
 
+  <dialog id="snipMgr" class="modal wide">
+    <form method="dialog" class="modal-head"><h2>Textes types</h2><button class="icon-btn" value="close" aria-label="Fermer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></form>
+    <div class="modal-body snip-mgr">
+      <div class="snip-side">
+        <button type="button" class="btn btn-primary" id="snipNewBtn">+ Nouveau</button>
+        <ul id="snipMgrList"></ul>
+      </div>
+      <div class="snip-edit" id="snipEdit">
+        <div class="field"><label for="snipName">Nom (à dire après « insère »)</label>
+          <input id="snipName" type="text" spellcheck="false" autocomplete="off" placeholder="examen normal"></div>
+        <p class="hint" id="snipSay"></p>
+        <div class="field"><label for="snipText">Texte</label>
+          <textarea id="snipText" rows="10" lang="fr" spellcheck="true" placeholder="Texte tel qu'il doit être inséré. Retour à la ligne avec Entrée."></textarea></div>
+        <div class="row wrap">
+          <button type="button" class="btn" id="snipFieldBtn" title="Ajouter un champ à compléter à l'endroit du curseur">Champ à compléter […]</button>
+          <button type="button" class="btn danger" id="snipDelBtn">Supprimer</button>
+          <button type="button" class="btn btn-primary" id="snipInsertBtn">Insérer dans l'encart</button>
+        </div>
+        <p class="hint">Enregistrement automatique, synchronisé entre vos appareils. Les champs […] non complétés ne sont jamais copiés.</p>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="checker" class="modal wide">
+    <form method="dialog" class="modal-head"><h2>Vérification</h2><button class="icon-btn" value="close" aria-label="Fermer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></form>
+    <div class="modal-body">
+      <p class="hint" id="checkWhere"></p>
+      <div class="row wrap"><span id="checkSummary" class="hint"></span><button class="btn btn-primary" id="fixAllBtn" type="button">Tout corriger</button></div>
+      <ul id="issues" class="issues"></ul>
+      <p class="hint">Corrections proposées par LanguageTool. Vérifiez chaque suggestion : un correcteur automatique peut se tromper sur le vocabulaire médical. Les termes du lexique médical et du dictionnaire personnel ne sont pas signalés.</p>
+    </div>
+  </dialog>
+
+  <dialog id="cmdHelp" class="modal wide">
+    <form method="dialog" class="modal-head"><h2>Commandes vocales</h2><button class="icon-btn" value="close" aria-label="Fermer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></form>
+    <div class="modal-body help">
+      <p class="hint">Dites la commande au fil de la phrase. Plusieurs formulations sont acceptées ; la première est en gras. Texte brut : les commandes de gras, italique, souligné et titre sont sans effet.</p>
+      <div id="cmdTable"></div>
+    </div>
+  </dialog>
+
   <dialog id="help" class="modal">
     <form method="dialog" class="modal-head">
       <h2>Mise en place de la synchronisation</h2>
@@ -232,11 +358,17 @@
     </div>
   </dialog>
 
-  <script src="js/config.js?v=1.1.1"></script>
-  <script src="js/data.js?v=1.1.1"></script>
-  <script src="js/vendor/qrcode.js?v=1.1.1"></script>
-  <script src="js/sync.js?v=1.1.1"></script>
-  <script src="js/app.js?v=1.1.1"></script>
+  <script src="js/config.js?v=1.2.0"></script>
+  <script src="js/data.js?v=1.2.0"></script>
+  <script src="js/vendor/qrcode.js?v=1.2.0"></script>
+  <script src="js/sync.js?v=1.2.0"></script>
+  <script src="js/lexique.js?v=1.2.0"></script>
+  <script src="js/lexique-medical.js?v=1.2.0"></script>
+  <script src="js/definitions.js?v=1.2.0"></script>
+  <script src="js/pipeline.js?v=1.2.0"></script>
+  <script src="js/speech.js?v=1.2.0"></script>
+  <script src="js/app.js?v=1.2.0"></script>
+  <script src="js/dictee.js?v=1.2.0"></script>
   <script>
     /* Filet de securite : si l'application n'a pas demarre (fichiers de versions
        differentes en cache apres une mise a jour), on vide le cache de
