@@ -49,6 +49,17 @@
   }
   const FIELD_RE = /\[(?:…|\.\.\.|\s*)\]|_{3,}/g;
   const FIELD = '[…]';
+  // Champs a choix : {monsieur|madame}, {paragraphe A|paragraphe B}, {paragraphe facultatif|}
+  const CHOICE_RE = /\{([^{}]*\|[^{}]*)\}/g;
+  const TOKEN_RE = /\[…\]|\{[^{}]*\|[^{}]*\}/g;   // elements a completer dans un encart
+  function tokens(v) {
+    const out = []; let m;
+    TOKEN_RE.lastIndex = 0;
+    while ((m = TOKEN_RE.exec(v))) out.push({ a: m.index, b: m.index + m[0].length, choice: m[0].charAt(0) === '{', raw: m[0] });
+    return out;
+  }
+  const choiceOpts = raw => raw.slice(1, -1).split('|');
+  function tokenAtSel(v, a, b) { return tokens(v).find(t => t.a === a && t.b === b) || null; }
   const normName = x => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/œ/g, 'oe').replace(/[^a-z0-9]+/g, ' ').trim();
   const snippetList = () => parsePairs(APP.cfg().snip, true).map(([name, text]) => ({ name, text }));
   function saveSnippets(list) {
@@ -82,6 +93,8 @@
   /* Zone cible de la dictee                                             */
   /* ================================================================== */
   let target = null;
+  const choiceMenu = $('#choiceMenu');
+  let choiceTa = null;
   const caretKnown = new WeakSet();
   const isTargetable = el => el && el.tagName === 'TEXTAREA' && el.closest('#sections') && !el.closest('.vital');
   function sectionOf(ta) { const c = ta && ta.closest('.card'); return c ? c.dataset.id : ''; }
@@ -105,6 +118,7 @@
   }
   function setTarget(ta) {
     if (target && target !== ta) target.classList.remove('dict-target');
+    if (choiceTa && choiceTa !== ta && !choiceMenu.hidden) closeChoiceMenu();
     target = ta;
     if (ta && listening) ta.classList.add('dict-target');
     renderStatus();
@@ -146,14 +160,22 @@
     };
     for (const op of ops) {
       switch (op.type) {
+        case 'raw': delSel(); put(op.text); break;
         case 'text': case 'punct': {
+          autoAdvancedAt = 0;
           delSel();
           const r = PIPE.joinPiece(w.v.slice(0, w.a), op, st, textOpts());
           put(r.ins, r.del);
           break;
         }
         case 'snippet': insertSnippet(w, op.text); break;
-        case 'field': nextField(w); break;
+        case 'field':
+          // apres un choix, le passage au champ suivant est deja fait : « champ suivant » dit juste apres est ignore
+          if (op.dir > 0 && autoAdvancedAt && Date.now() - autoAdvancedAt < 8000) { autoAdvancedAt = 0; break; }
+          autoAdvancedAt = 0;
+          nextField(w, op.dir);
+          break;
+        case 'spell': afterCommit.push(() => { startSpell(); if (op.text) spellInput(op.text); }); break;
         case 'nl': listMode = null; newline(1); break;
         case 'par': case 'block': listMode = null; newline(2); break;
         case 'list': listMode = op.kind; listN = 0; newline(1); put(bullet()); st.capsNext = true; break;
@@ -194,8 +216,10 @@
     try { ta.setSelectionRange(w.a, w.b); } catch (e) {}
     caretKnown.add(ta);
     revealField(ta);
+    syncChoiceMenu(ta);
     afterCommit.forEach(fn => fn());
   }
+  let autoAdvancedAt = 0;
   function bullet() { return listMode === 'ol' ? (++listN) + '. ' : '- '; }
   function revealField(ta) {
     const r = ta.getBoundingClientRect();
@@ -208,7 +232,7 @@
   function insertSnippet(w, text) {
     if (w.b > w.a) { w.v = w.v.slice(0, w.a) + w.v.slice(w.b); w.b = w.a; }
     const body0 = String(text).replace(/\r/g, '').replace(FIELD_RE, FIELD).replace(/^\s+|\s+$/g, '');
-    const first = body0.split('\n')[0];
+    const first = body0.replace(CHOICE_RE, (m, inner) => inner.split('|')[0]).split('\n')[0];
     const r = PIPE.joinPiece(w.v.slice(0, w.a), { type: 'text', text: first.replace(/\[…\]/g, 'x') || 'x' }, st, textOpts());
     const lead = (r.ins.match(/^ +/) || [''])[0];
     let body = body0;
@@ -216,27 +240,161 @@
     const at = w.a - r.del;
     w.v = w.v.slice(0, at) + lead + body + w.v.slice(w.a);
     const from = at + lead.length;
-    const i = w.v.indexOf(FIELD, from);
-    if (i >= 0 && i < from + body.length) { w.a = i; w.b = i + FIELD.length; }
+    const tk = tokens(w.v).find(t => t.a >= from && t.b <= from + body.length);
+    if (tk) { w.a = tk.a; w.b = tk.b; }
     else { w.a = w.b = from + body.length; }
   }
-  // « champ suivant » : selectionne le prochain [...] (la dictee le remplace)
-  function nextField(w) {
-    const from = w.b > w.a && w.v.slice(w.a, w.b) === FIELD ? w.b : w.a;
-    let i = w.v.indexOf(FIELD, from);
-    if (i < 0) i = w.v.indexOf(FIELD);
-    if (i < 0) { toast('Aucun champ à compléter dans cet encart'); return; }
-    w.a = i; w.b = i + FIELD.length;
+  // « champ suivant » / « champ précédent » : selectionne le champ [...] ou le choix {a|b} suivant
+  function nextField(w, dir) {
+    dir = dir || 1;
+    const list = tokens(w.v);
+    if (!list.length) { toast('Aucun champ à compléter dans cet encart'); return false; }
+    const cur = list.find(t => t.a === w.a && t.b === w.b);
+    let t;
+    if (dir > 0) t = list.find(x => x.a >= (cur ? cur.b : w.a)) || list[0];
+    else t = list.slice().reverse().find(x => x.b <= (cur ? cur.a : w.a)) || list[list.length - 1];
+    w.a = t.a; w.b = t.b;
+    return true;
   }
-  // Touche Tab dans un encart contenant des champs : passe au champ suivant
+  // Tab / Maj+Tab dans un encart contenant des champs ; chiffres et effacement sur un choix selectionne
   document.addEventListener('keydown', e => {
-    if (e.key !== 'Tab' || e.shiftKey || !isTargetable(e.target) || e.target.value.indexOf(FIELD) < 0) return;
-    e.preventDefault();
     const ta = e.target;
+    if (!isTargetable(ta)) return;
+    const tk = tokenAtSel(ta.value, ta.selectionStart, ta.selectionEnd);
+    if (tk && tk.choice && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (/^[1-9]$/.test(e.key) && Number(e.key) <= choiceOpts(tk.raw).length) { e.preventDefault(); chooseOption(ta, Number(e.key) - 1); return; }
+      if (e.key === 'Backspace' || e.key === 'Delete') { e.preventDefault(); chooseOption(ta, choiceOpts(tk.raw).findIndex(o => !o.trim())); return; }
+    }
+    if (e.key !== 'Tab' || e.altKey || e.ctrlKey || e.metaKey || !tokens(ta.value).length) return;
+    e.preventDefault();
     const w = { v: ta.value, a: ta.selectionStart, b: ta.selectionEnd };
-    nextField(w);
+    nextField(w, e.shiftKey ? -1 : 1);
     ta.setSelectionRange(w.a, w.b);
+    syncChoiceMenu(ta);
   });
+  // Toucher un champ ou un choix : il est selectionne en entier (la dictee le remplace)
+  document.addEventListener('click', e => {
+    const ta = e.target;
+    if (!isTargetable(ta) || ta.selectionStart !== ta.selectionEnd) return;
+    const c = ta.selectionStart;
+    const tk = tokens(ta.value).find(t => c > t.a && c < t.b);
+    if (tk) { ta.setSelectionRange(tk.a, tk.b); caretKnown.add(ta); }
+    syncChoiceMenu(ta);
+  });
+
+  /* ---------------- Champs a choix : menu, voix, clavier ---------------- */
+
+  function choiceLabel(o) {
+    const t = String(o).replace(/\s+/g, ' ').replace(FIELD_RE, '…').trim();
+    return t ? (t.length > 32 ? t.slice(0, 30) + '…' : t) : '(rien)';
+  }
+  function activeChoice() {
+    const ta = choiceTa;
+    if (!ta || !ta.isConnected || ta !== resolveTarget()) return null; // seulement dans l'encart cible
+    const tk = tokenAtSel(ta.value, ta.selectionStart, ta.selectionEnd);
+    return tk && tk.choice ? { ta, tk } : null;
+  }
+  function syncChoiceMenu(ta) {
+    const tk = ta && tokenAtSel(ta.value, ta.selectionStart, ta.selectionEnd);
+    if (!tk || !tk.choice) { if (choiceTa === ta || !activeChoice()) closeChoiceMenu(); return; }
+    choiceTa = ta;
+    const ul = $('#choiceList');
+    ul.innerHTML = '';
+    choiceOpts(tk.raw).forEach((o, i) => {
+      const li = document.createElement('li');
+      li.innerHTML = '<button type="button"><b></b><span></span></button>';
+      $('b', li).textContent = (i + 1) + '.';
+      $('span', li).textContent = o.trim() ? o.trim() : '(rien : retirer)';
+      if (!o.trim()) li.classList.add('none');
+      $('button', li).addEventListener('mousedown', e => e.preventDefault());
+      $('button', li).addEventListener('click', () => chooseOption(ta, i));
+      ul.appendChild(li);
+    });
+    $('#choiceWhere').textContent = labelOf(ta);
+    choiceMenu.hidden = false;
+  }
+  function closeChoiceMenu() { choiceMenu.hidden = true; choiceTa = null; }
+  $('#choiceLater').addEventListener('click', closeChoiceMenu);
+  function chooseOption(ta, idx) {
+    const tk = tokenAtSel(ta.value, ta.selectionStart, ta.selectionEnd);
+    if (!tk || !tk.choice) { closeChoiceMenu(); return; }
+    const opts = choiceOpts(tk.raw);
+    // espaces retires aux bords, mais pas les retours a la ligne voulus ({\nParagraphe…|})
+    let opt = idx >= 0 && idx < opts.length ? opts[idx].replace(/^[ \t\u00a0]+|[ \t\u00a0]+$/g, '').replace(FIELD_RE, FIELD) : '';
+    if (!opt.trim()) opt = '';
+    let v = ta.value, a = tk.a, b = tk.b;
+    if (!opt) {
+      // option « rien » : ni ligne vide ni double espace a la place
+      const before = v.slice(0, a), after = v.slice(b);
+      if ((/(^|\n)[  ]*$/.test(before)) && /^[  ]*(\n|$)/.test(after)) {
+        a -= (before.match(/[  ]*$/) || [''])[0].length;
+        b += (after.match(/^[  ]*\n?/) || [''])[0].length;
+        if (b === v.length && a > 0 && v[a - 1] === '\n') a--;
+      } else if (/[  ]$/.test(before) && /^([  ,.;:!?)]|$)/.test(after)) a--;
+    }
+    v = v.slice(0, a) + opt + v.slice(b);
+    const u = stackOf(undoStacks, ta); u.push(ta.value);
+    ta.value = v;
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    if (APP.autoGrow) APP.autoGrow(ta);
+    const end = a + opt.length;
+    const inside = tokens(v).find(t => t.a >= a && t.b <= end);
+    const next = inside || tokens(v).find(t => t.a >= end);
+    if (next) { ta.setSelectionRange(next.a, next.b); autoAdvancedAt = Date.now(); }
+    else ta.setSelectionRange(end, end);
+    caretKnown.add(ta);
+    closeChoiceMenu();
+    syncChoiceMenu(ta);
+  }
+  const ORD = { premier: 0, premiere: 0, un: 0, une: 0, '1': 0, deuxieme: 1, second: 1, seconde: 1, deux: 1, '2': 1,
+    troisieme: 2, trois: 2, '3': 2, quatrieme: 3, quatre: 3, '4': 3, cinquieme: 4, cinq: 4, '5': 4 };
+  const NONE_RE = /^(rien|aucun|aucune|sans|vide|absent|absente|supprimer|supprime|supprimez|retirer|retire|retirez|enlever|enleve|enlevez|pas de .*|ne rien mettre|non|aucune option)$/;
+  const ORD_RE = /^(?:(?:l |la |le )?(?:option|choix|numero|proposition)\s+)?(?:le |la )?(\w+)(?:\s+(?:option|choix|proposition))?$/;
+  // indice choisi, -1 pour « retirer », null si non reconnu
+  function matchChoice(text, opts) {
+    const t = normName(text);
+    if (!t) return null;
+    const nm = opts.map(o => normName(o.replace(FIELD_RE, ' ')));
+    let i = nm.findIndex(o => o && o === t);
+    if (i >= 0) return i;
+    if (NONE_RE.test(t)) { const e = opts.findIndex(o => !o.trim()); return e >= 0 ? e : -1; }
+    const om = t.match(ORD_RE);
+    if (om && ORD[om[1]] !== undefined && ORD[om[1]] < opts.length) return ORD[om[1]];
+    if (t.length >= 3) { i = nm.findIndex(o => o && o.startsWith(t)); if (i >= 0) return i; }
+    i = nm.findIndex(o => o && o.length >= 3 && t.startsWith(o));
+    return i >= 0 ? i : null;
+  }
+  // l'option peut etre suivie d'autre chose : « madame Durand champ suivant douleur »
+  function matchChoicePrefix(text, opts) {
+    const words = String(text).trim().split(/\s+/).filter(Boolean);
+    for (let k = Math.min(words.length, 8); k >= 1; k--) {
+      const head = normName(words.slice(0, k).join(' '));
+      const exact = opts.findIndex(o => o.trim() && normName(o.replace(FIELD_RE, ' ')) === head);
+      const om = head.match(ORD_RE);
+      if (exact >= 0 || NONE_RE.test(head) || (om && ORD[om[1]] !== undefined && ORD[om[1]] < opts.length)) {
+        const idx = matchChoice(words.slice(0, k).join(' '), opts);
+        if (idx !== null) return { idx, rest: words.slice(k).join(' ') };
+      }
+    }
+    const cut = PIPE.firstCommandIndex(text, C);
+    const head = cut >= 0 ? String(text).slice(0, cut) : String(text);
+    const idx = head.trim() ? matchChoice(head, opts) : null;
+    if (idx !== null) return { idx, rest: cut >= 0 ? String(text).slice(cut).trim() : '' };
+    return null;
+  }
+  function choiceByVoice(text, ac) {
+    const opts = choiceOpts(ac.tk.raw);
+    const hit = matchChoicePrefix(text, opts);
+    if (hit) {
+      chooseOption(ac.ta, hit.idx);
+      if (hit.rest) hooks.onFinal(hit.rest); // la suite va dans le champ suivant
+      return;
+    }
+    if (splitNav(text).some(x => x.nav || x.validate)) { closeChoiceMenu(); processText(text, true); return; }
+    const ops = PIPE.parse(text, C);
+    if (ops.length && ops.some(o => o.type !== 'text')) { applyOps(ops, ac.ta); return; }
+    toast('Choix non reconnu : dites ' + opts.map(o => '« ' + (o.trim() ? choiceLabel(o) : 'rien') + ' »').join(', ') + ', ou « option 1, 2… » ; « champ suivant » pour passer');
+  }
 
   /* ================================================================== */
   /* Commandes propres a LeSacAUrge : navigation entre encarts           */
@@ -328,26 +486,58 @@
       if (p.validate) { validateEntry(); return; }
       let t = p.text;
       if (!t.trim()) return;
+      // « épelle d u p o n t fin » : tout part en epellation, sans mise en attente de « fin »
+      const direct = PIPE.parse(t, C);
+      if (direct.some(o => o.type === 'spell')) { applyOps(direct); return; }
       if (isFinalChunk && i === parts.length - 1) {
-        const n = PIPE.incompleteTail(t, C);
+        // debut d'une commande de navigation coupe par une pause (« … encart » puis « examen »)
+        const nav = t.match(/(?:^|\s)((?:encart|section|(?:va|vas|allez|aller|passe|passez|passer)(?:\s+(?:[aà]|au|aux|en)(?:\s+(?:la|l['’]))?)?)\s*)$/i);
+        let n = nav ? nav[1].length : PIPE.incompleteTail(t, C);
         if (n) {
           held = t.slice(t.length - n).trim();
           heldTimer = setTimeout(flushHeld, 2500);
           t = t.slice(0, t.length - n);
         }
       }
-      if (t.trim()) applyOps(PIPE.parse(t, C));
+      if (t.trim()) applyChained(PIPE.parse(t, C));
     });
   }
+  /* Applique les operations ; quand « champ suivant » arrive sur un choix {a|b}, les mots
+     qui suivent servent a choisir (« champ suivant madame Durand »), le reste continue. */
+  function applyChained(ops) {
+    let rest = ops.slice();
+    while (rest.length) {
+      const k = rest.findIndex(o => o.type === 'field');
+      if (k < 0) { applyOps(rest); return; }
+      applyOps(rest.slice(0, k + 1));
+      rest = rest.slice(k + 1);
+      const ac = activeChoice();
+      if (!ac || !rest.length) continue;
+      let n = 0;
+      while (n < rest.length && (rest[n].type === 'text' || rest[n].type === 'punct')) n++;
+      const words = rest.slice(0, n).filter(o => o.type === 'text').map(o => o.text).join(' ');
+      const hit = words ? matchChoicePrefix(words, choiceOpts(ac.tk.raw)) : null;
+      if (!hit) continue;
+      chooseOption(ac.ta, hit.idx);
+      rest = (hit.rest ? [{ type: 'text', text: hit.rest }] : []).concat(rest.slice(n));
+    }
+  }
   const hooks = {
+    // commandes appliquees au fil de la parole (moteur du navigateur) ; jamais pendant l'epellation
+    commitPoint(t) { return spellMode ? 0 : PIPE.commitPoint(t, C, 1); },
+    normalize(t) { return PIPE.normalizeTranscript(t); },
     onInterim(t) {
+      if (spellMode) { showSpellBadge(t); return; }
       if (t) { interimEl.textContent = t; interimEl.hidden = false; }
       else interimEl.hidden = true;
     },
     onFinal(t) {
+      if (spellMode) { spellInput(PIPE.normalizeTranscript(t)); return; }
       clearTimeout(heldTimer);
-      const text = (held ? held + ' ' : '') + String(t || '').trim();
+      const text = (held ? held + ' ' : '') + PIPE.normalizeTranscript(t).trim();
       held = '';
+      const ac = activeChoice();
+      if (ac) { choiceByVoice(text, ac); return; }
       processText(text, true);
     },
     onState(s) {
@@ -391,6 +581,7 @@
     const ta = resolveTarget();
     if (ta) setTarget(ta);
     if (k === 'keyboard') {
+      setKeyboard(true);
       if (ta) { ta.focus(); try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (e) {} }
       toast(SPEECH.isIOS ? 'Touchez le micro du clavier pour dicter, puis « Mise en forme »' : 'Utilisez la dictée du clavier, puis « Mise en forme »');
       return;
@@ -404,7 +595,83 @@
     st.capsNext = false; st.capsLock = false; listMode = null;
     engine.start('fr-FR');
   }
-  function stopDictation() { if (engine) engine.stop(); setTimeout(flushHeld, 600); }
+  function stopDictation() { if (engine) engine.stop(); setTimeout(flushHeld, 600); if (spellMode) endSpell(); }
+
+  /* ---------------- Epellation d'un nom propre (MAJUSCULES) ---------------- */
+  let spellMode = false, spellStarted = false, spellSoFar = '', spellTimer = null;
+  const spellBtn = $('#spellBtn');
+  function showSpellBadge(interim) {
+    interimEl.classList.add('spell');
+    interimEl.textContent = 'Épellation : ' + (spellSoFar || '…') + (interim ? '  ' + interim : '') + '  -  dites « fin »';
+    interimEl.hidden = false;
+  }
+  function armSpellTimer() { clearTimeout(spellTimer); spellTimer = setTimeout(() => { if (spellMode) endSpell(); }, 8000); }
+  function startSpell() {
+    if (!spellMode) { spellMode = true; spellStarted = false; spellSoFar = ''; }
+    clearTimeout(heldTimer); held = '';
+    spellBtn.classList.add('on'); spellBtn.setAttribute('aria-pressed', 'true');
+    showSpellBadge('');
+    armSpellTimer();
+  }
+  function spellInput(t) {
+    // ce qui suit « fin » reprend la dictee normale (« … fin virgule en 2019 »)
+    const cut = String(t).match(/^(.*?(?:^|[\s,.;])(?:fin|termin[ée]e?|stop|fini|c['’]est tout))(?=$|[\s,.;!?])(.*)$/i);
+    const rest = cut ? cut[2] : '';
+    if (cut) t = cut[1];
+    const r = PIPE.spell(t);
+    if (r.end && rest.trim()) { setTimeout(() => processText(rest, true), 0); }
+    if (r.text) {
+      if (!spellStarted) { applyOps([{ type: 'text', text: r.text, verbatim: true }]); spellStarted = true; }
+      else applyOps([{ type: 'raw', text: r.text }]);
+      spellSoFar += r.text;
+    }
+    if (r.end) endSpell(); else { showSpellBadge(''); armSpellTimer(); }
+  }
+  function endSpell() {
+    clearTimeout(spellTimer);
+    const done = spellSoFar;
+    spellMode = false; spellStarted = false; spellSoFar = '';
+    spellBtn.classList.remove('on'); spellBtn.setAttribute('aria-pressed', 'false');
+    interimEl.classList.remove('spell'); interimEl.hidden = true;
+    if (done) toast('Nom écrit : ' + done);
+  }
+  spellBtn.addEventListener('mousedown', e => e.preventDefault());
+  spellBtn.addEventListener('click', () => {
+    if (spellMode) { endSpell(); return; }
+    startSpell();
+    if (!listening && resolveEngine() !== 'keyboard') startDictation();
+  });
+
+  /* ---------------- Clavier virtuel (telephone, tablette) : a la demande ---------------- */
+  const touchUI = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches);
+  const kbBtn = $('#kbBtn');
+  let kbShown = !touchUI || resolveEngine() === 'keyboard', kbHinted = false;
+  const kbTargets = () => $$('#sections textarea');
+  function applyKb(el) { if (!touchUI) return; if (kbShown) el.removeAttribute('inputmode'); else el.setAttribute('inputmode', 'none'); }
+  function setKeyboard(show) {
+    if (!touchUI) return;
+    kbShown = !!show;
+    kbTargets().forEach(applyKb);
+    kbBtn.classList.toggle('on', kbShown); kbBtn.setAttribute('aria-pressed', String(kbShown));
+    const ta = document.activeElement;
+    if (isTargetable(ta)) { // le changement ne prend effet qu'a la prochaine prise de focus
+      const a = ta.selectionStart, b = ta.selectionEnd;
+      ta.blur(); ta.focus({ preventScroll: true }); try { ta.setSelectionRange(a, b); } catch (e) {}
+    }
+  }
+  if (touchUI) {
+    document.body.classList.add('touch');
+    new MutationObserver(() => kbTargets().forEach(applyKb)).observe($('#sections'), { childList: true, subtree: true });
+    setKeyboard(kbShown);
+    kbBtn.addEventListener('mousedown', e => e.preventDefault());
+    kbBtn.addEventListener('click', () => {
+      setKeyboard(!kbShown);
+      if (kbShown) { const ta = resolveTarget(); if (ta && document.activeElement !== ta) ta.focus(); }
+    });
+    document.addEventListener('focusin', e => {
+      if (!kbShown && !kbHinted && isTargetable(e.target)) { kbHinted = true; toast('Clavier masqué pendant la dictée : touchez ⌨ pour l\'afficher'); }
+    });
+  }
   micBtn.addEventListener('mousedown', e => e.preventDefault());
   micBtn.addEventListener('click', () => { if (listening) stopDictation(); else startDictation(); });
   document.addEventListener('keydown', e => {
@@ -600,7 +867,7 @@
       const li = document.createElement('li');
       li.innerHTML = '<button type="button" role="menuitem"><b></b><span></span></button>';
       $('b', li).textContent = x.name;
-      $('span', li).textContent = x.text.replace(/\n+/g, ' · ').slice(0, 90);
+      $('span', li).textContent = snippetPreview(x.text).replace(/\n+/g, ' · ').slice(0, 90);
       $('button', li).addEventListener('mousedown', e => e.preventDefault());
       $('button', li).addEventListener('click', () => { closeSnipMenu(); applyOps([{ type: 'snippet', text: x.text }]); });
       ul.appendChild(li);
@@ -609,6 +876,9 @@
     snipMenu.hidden = false;
   }
   function closeSnipMenu() { snipMenu.hidden = true; }
+  function snippetPreview(text) {
+    return String(text).replace(CHOICE_RE, (m, inner) => '‹' + inner.split('|').map(o => o.trim() ? o.replace(/\s+/g, ' ').trim().slice(0, 18) : '∅').join(' / ') + '›');
+  }
   $('#snipBtn').addEventListener('mousedown', e => e.preventDefault());
   $('#snipBtn').addEventListener('click', e => { e.stopPropagation(); snipMenu.hidden ? openSnipMenu() : closeSnipMenu(); });
   document.addEventListener('click', e => { if (!snipMenu.hidden && !snipMenu.contains(e.target) && !e.target.closest('#snipBtn')) closeSnipMenu(); });
@@ -647,8 +917,8 @@
     if (cur) {
       if (document.activeElement !== $('#snipName')) $('#snipName').value = cur.name;
       if (document.activeElement !== $('#snipText')) $('#snipText').value = cur.text;
-      const nf = (cur.text.match(FIELD_RE) || []).length;
-      $('#snipSay').textContent = cur.name ? 'Pour l\'insérer, dites : « insère ' + cur.name + ' »' + (nf ? ' - ' + nf + ' champ(s) à compléter' : '') : '';
+      const nf = (cur.text.replace(CHOICE_RE, '').match(FIELD_RE) || []).length, nc = (cur.text.match(CHOICE_RE) || []).length;
+      $('#snipSay').textContent = cur.name ? 'Pour l\'insérer, dites : « insère ' + cur.name + ' »' + (nf ? ' - ' + nf + ' champ(s) à compléter' : '') + (nc ? ' - ' + nc + ' choix' : '') : '';
     }
   }
   function mgrChanged() {
@@ -675,6 +945,22 @@
     mgrIdx = Math.min(mgrIdx, mgrList.length - 1);
     saveSnippets(mgrList); renderSnipMgr();
   });
+  function wrapInSnippet(make) {
+    const ta = $('#snipText');
+    const a = ta.selectionStart, b = ta.selectionEnd;
+    const [ins, selFrom, selTo] = make(ta.value.slice(a, b));
+    ta.value = ta.value.slice(0, a) + ins + ta.value.slice(b);
+    ta.focus(); ta.selectionStart = a + selFrom; ta.selectionEnd = a + selTo;
+    mgrChanged();
+  }
+  $('#snipChoiceBtn').addEventListener('click', () => wrapInSnippet(sel => {
+    const first = sel || 'monsieur';
+    return ['{' + first + '|' + (sel ? 'autre option' : 'madame') + '}', 1, 1 + first.length];
+  }));
+  $('#snipOptBtn').addEventListener('click', () => wrapInSnippet(sel => {
+    const body = sel || 'Paragraphe facultatif.';
+    return ['{' + body + '|}', 1, 1 + body.length];
+  }));
   $('#snipFieldBtn').addEventListener('click', () => {
     const ta = $('#snipText');
     const a = ta.selectionStart, b = ta.selectionEnd;
@@ -782,11 +1068,13 @@
     });
     const navRows = '<tr><td><b>« encart anamnèse »</b><span class="alt">« aller à l\'examen », « passe aux antécédents »</span></td><td>Dicter dans un autre encart (motif, anamnèse, antécédents médicaux / chirurgicaux, traitements, allergies, examen, hypothèses, ECG, conduite à tenir, évolution, conclusion)</td></tr>' +
       '<tr><td><b>« valide l\'entrée »</b></td><td>Évolution : ajoute l\'entrée dictée avec l\'heure</td></tr>' +
-      '<tr><td><b>« insère examen normal »</b><span class="alt">« insère » + nom d\'un texte type</span></td><td>Insère un texte type ; « champ suivant » ou Tab passe au champ […] suivant</td></tr>';
+      '<tr><td><b>« insère examen normal »</b><span class="alt">« insère » + nom d\'un texte type</span></td><td>Insère un texte type ; « champ suivant » / « champ précédent » (ou Tab, Maj+Tab) passe d\'un champ […] ou d\'un choix {a|b} à l\'autre</td></tr>' +
+      '<tr><td><b>« madame »</b><span class="alt">« option 2 », « deuxième », « rien »</span></td><td>Sur un choix {monsieur|madame} sélectionné : choisit l\'option (ou touchez-la, ou tapez 1, 2…), puis passe au champ suivant ; la suite de la phrase y est dictée</td></tr>' +
+      '<tr><td><b>« épeler »</b><span class="alt">ou bouton ABC</span></td><td>Épeler un nom propre : « M A R T I N », « emme a erre… », « double vé », « tiret », « e accent grave » ; écrit en MAJUSCULES ; « fin » (ou 8 s de silence) pour terminer</td></tr>';
     $('#cmdTable').innerHTML = '<h3>LeSacAUrge</h3><table class="cmds"><tbody>' + navRows + '</tbody></table>' +
       Object.keys(groups).map(g =>
         '<h3>' + esc(g) + '</h3><table class="cmds"><tbody>' + groups[g].map(c =>
-          '<tr><td><b>« ' + esc(c.say[0]) + ' »</b>' + (c.say.length > 1 ? '<span class="alt">' + c.say.slice(1).map(x => '« ' + esc(x) + ' »').join(', ') + '</span>' : '') +
+          '<tr><td><b>« ' + esc(c.say[0]) + ' »</b>' + (c.say.length > 1 ? '<span class="alt">' + c.say.slice(1, 5).map(x => '« ' + esc(x) + ' »').join(', ') + (c.say.length > 5 ? '…' : '') + '</span>' : '') +
           '</td><td>' + esc(c.label) + '</td></tr>').join('') + '</tbody></table>').join('');
   }
   $('#cmdHelpBtn').addEventListener('click', () => { renderHelp(); $('#cmdHelp').showModal(); });
@@ -847,5 +1135,5 @@
 
   renderStatus();
   // Interface de test
-  window.LSAU_DICTEE = { dictate: (t) => { hooks.onFinal(t); }, flush: flushHeld, applyOps, setTarget, resolveTarget, tidyField, runCheck, splitNav, addToDict, snippetList };
+  window.LSAU_DICTEE = { hooks, chooseOption, matchChoicePrefix, spellState: () => ({ spellMode, spellSoFar }), setKeyboard, dictate: (t) => { hooks.onFinal(t); }, flush: flushHeld, applyOps, setTarget, resolveTarget, tidyField, runCheck, splitNav, addToDict, snippetList };
 })();

@@ -4,7 +4,7 @@
    saisie dans les reglages de l'application).
    ©2026 LESACA Julien - Tous droits reserves. */
 window.LSAU_CONFIG = {
-  version: '1.2.0',
+  version: '1.3.0',
   firebaseDatabaseUrl: 'https://lesacaurge-default-rtdb.europe-west1.firebasedatabase.app',
   // Verification orthographique et grammaticale (LanguageTool) : remplacer par
   // l'adresse d'un serveur auto-heberge pour que le texte reste dans votre reseau.

@@ -44,7 +44,7 @@
   const settings = Object.assign({
     theme: 'auto', titles: true, ascii: false, markCopied: true, retentionH: 24,
     hidden: [], chips: {}, dbUrl: CFG.firebaseDatabaseUrl || '', code: '', syncOn: false,
-    spell: true, syncIdent: false
+    spell: true, syncIdent: false, follow: true
   }, load(SET_KEY, {}));
   // adresse par defaut (config.js) si aucune n'a ete saisie sur cet appareil
   if (!settings.dbUrl && CFG.firebaseDatabaseUrl) settings.dbUrl = CFG.firebaseDatabaseUrl;
@@ -170,6 +170,8 @@
       .replace(/\r\n?/g, '\n')
       // champs a completer restes vides (textes types) : jamais copies
       .replace(/[  ]*\[(?:…|\.\.\.|\s*)\]/g, '')
+      // choix {a|b} non faits : jamais copies
+      .replace(/[ \u00a0]*\{[^{}]*\|[^{}]*\}/g, '')
       .replace(/[‘’‚‛′´`]/g, '\'')
       .replace(/[“”„‟«»″]/g, '"')
       .replace(/[‐‑‒–—―−]/g, '-')
@@ -1049,6 +1051,16 @@
   /* ================================================================== */
   /* Copie                                                               */
   /* ================================================================== */
+  const PENDING_RE = /\[(?:\u2026|\.\.\.|\s*)\]|\{[^{}]*\|[^{}]*\}/g;
+  function pendingCount(d, ids) {
+    let n = 0;
+    ids.forEach(id => {
+      const raw = id === 'evolution' ? d.evo.filter(x => !x.del).map(x => x.text).join('\n') : (d.fields[id] || '');
+      n += (raw.match(PENDING_RE) || []).length;
+    });
+    return n;
+  }
+  const pendingMsg = n => n ? ' - attention : ' + n + ' champ' + (n > 1 ? 's' : '') + ' non complété' + (n > 1 ? 's' : '') + ' (retiré' + (n > 1 ? 's' : '') + ' de la copie)' : '';
   function sectionText(d, id) {
     if (id === 'evolution') return evoText(d.evo);
     return toPlain(d.fields[id] || '');
@@ -1075,7 +1087,7 @@
     btn.innerHTML = ICON.check + '<span>Copié</span>';
     setTimeout(() => { btn.classList.remove('done'); btn.innerHTML = ICON.copy + '<span>' + label + '</span>'; }, 1400);
     refreshCard(id);
-    if (!(id === 'ecg' && /\bxx\b/.test(text))) toast(e.sec.title + ' copié');
+    if (!(id === 'ecg' && /\bxx\b/.test(text))) toast(e.sec.title + ' copié' + pendingMsg(pendingCount(d, [id])));
   }
   function allText() {
     const d = current();
@@ -1113,7 +1125,7 @@
     const text = allText();
     if (!text) { toast('Observation vide'); return; }
     const ok = await copyText(text);
-    toast(ok ? 'Observation complète copiée' : 'Copie impossible');
+    toast(ok ? 'Observation complète copiée' + pendingMsg(pendingCount(current(), visibleSections().map(x => x.id))) : 'Copie impossible');
   }
 
   function purgeExpired() {
@@ -1211,6 +1223,31 @@
     }
   });
 
+  /* Suivi en direct : un autre appareil dicte pour un autre patient -> on l'affiche,
+     sauf si l'on est en train d'ecrire ou de dicter ici (alors simple proposition). */
+  let lastLocalEdit = 0, followToastAt = 0;
+  const proposed = new Set();
+  document.addEventListener('input', e => { if (e.target.closest && e.target.closest('#sections, #pbEditor')) lastLocalEdit = Date.now(); }, true);
+  const typingHere = () => document.body.classList.contains('dictating') || Date.now() - lastLocalEdit < 3000;
+  function followRemote(id) {
+    const d = store.dossiers[id];
+    if (!d || id === store.current) return;
+    const cur = store.dossiers[store.current];
+    const busyHere = typingHere() || (cur && !isEmpty(cur) && Date.now() - lastLocalEdit < 60000);
+    if (settings.follow && !busyHere) {
+      switchTo(id);
+      if (Date.now() - followToastAt > 15000) { followToastAt = Date.now(); toast('Affichage du patient dicté sur l\'autre appareil'); }
+    } else if (!proposed.has(id)) {
+      proposed.add(id);
+      toast('Saisie reçue d\'un autre appareil : ' + patientTitle(d), 'Ouvrir', () => { if (store.dossiers[id]) switchTo(id); });
+    }
+  }
+  function flashCard(f) {
+    const card = document.getElementById('card-' + (f === '_evo' ? 'evolution' : f));
+    if (!card) return;
+    card.classList.remove('remote-flash'); void card.offsetWidth; card.classList.add('remote-flash');
+  }
+
   let remoteTimer = null;
   const remoteQueue = new Set();
   function scheduleRemoteRefresh(id, field) {
@@ -1218,9 +1255,14 @@
     clearTimeout(remoteTimer);
     remoteTimer = setTimeout(() => {
       const curId = store.current;
+      let follow = null;
       remoteQueue.forEach(k => {
         const [did, f] = k.split('|');
-        if (did !== curId || !store.dossiers[did]) return;
+        const dd = store.dossiers[did];
+        const textual = f.charAt(0) !== '_' || f === '_evo';
+        if (did !== curId && dd && textual && Date.now() - (dd.t[f] || 0) < 120000) follow = did;
+        if (did !== curId || !dd) return;
+        if (textual) flashCard(f);
         if (f === '_meta') renderBanner();
         else if (f === '_vitals' || f === '_ecg') { if (els.examen) fillVitals(); if (els.ecg) refreshEcgControls(); }
         else if (f === '_evo') renderEvo();
@@ -1239,6 +1281,7 @@
         }
       });
       remoteQueue.clear();
+      if (follow) followRemote(follow);
       if (!store.dossiers[store.current]) fillFromDossier();
       updateBadge();
       if (board.open) renderBoard();
@@ -1290,6 +1333,7 @@
     $('#optMarkCopied').checked = !!settings.markCopied;
     $('#optSpell').checked = !!settings.spell;
     $('#optSyncIdent').checked = !!settings.syncIdent;
+    $('#optFollow').checked = settings.follow !== false;
     $('#retention').value = String(settings.retentionH);
     $$('input[name="theme"]').forEach(r => { r.checked = r.value === settings.theme; });
     $('#sectionToggles').innerHTML = SECTIONS.map(s =>
@@ -1334,6 +1378,7 @@
     toast(ok ? 'Données distantes effacées' : 'Échec de l\'effacement');
   });
 
+  $('#optFollow').addEventListener('change', e => { settings.follow = e.target.checked; persistSettings(); });
   $('#optTitles').addEventListener('change', e => { settings.titles = e.target.checked; persistSettings(); });
   $('#optAscii').addEventListener('change', e => { settings.ascii = e.target.checked; persistSettings(); Object.keys(els).forEach(refreshCard); });
   $('#optMarkCopied').addEventListener('change', e => { settings.markCopied = e.target.checked; persistSettings(); Object.keys(els).forEach(refreshCard); });
@@ -1449,6 +1494,7 @@
       store.cfg.t[field] = Date.now();
       persist();
       sync.queuePush('_cfg', field, 1500);
+      cfgListeners.forEach(fn => { try { fn(field); } catch (e) {} });
     },
     onCfgChange: (fn) => cfgListeners.push(fn),
     autoGrow

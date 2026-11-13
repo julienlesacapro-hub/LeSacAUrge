@@ -38,6 +38,47 @@ eq('glycémie à 1 virgule 2 gramme par litre et hba1c à 7 pour cent', 'Glycém
 eq('nt pro bnp à 450 et d dimères négatifs', 'NT-proBNP à 450 et D-dimères négatifs');
 eq('EVA à 6 sur 10', 'EVA à 6/10');
 eq('point final', 'Bilan.', 'Bilan');
+// « à la ligne » / « nouveau paragraphe » : mots, sans accent, sauts de ligne du moteur, ponctuation du moteur
+eq('patient vu à la ligne examen normal', 'Patient vu\nExamen normal');
+eq('patient vu a la ligne examen normal', 'Patient vu\nExamen normal');
+eq('patient vu\nexamen normal', 'Patient vu\nExamen normal');
+eq('Patient vu. À la ligne. Examen normal.', 'Patient vu.\nExamen normal.');
+eq('patient vu\n\nexamen normal', 'Patient vu\n\nExamen normal');
+eq('Patient vu. Nouveau paragraphe. Examen normal.', 'Patient vu.\n\nExamen normal.');
+n++; if (P.normalizeTranscript('\n').trim() !== 'à la ligne') { fail++; console.log('ÉCHEC saut de ligne seul'); }
+// Formules de courrier (règles intégrées)
+eq('chers confrères chers concert', 'Cher confrère, chère consœur,');
+eq('chers confrère virgule cher concerts à la ligne merci', 'Cher confrère, chère consœur,\nMerci');
+eq('cher consœur', 'Chère consœur');
+eq('mes chers confrères', 'Mes chers confrères');
+eq('le cher concert de Mozart', 'Le cher concert de Mozart');
+// « champ suivant » et ses homophones (champs, chant, chants), ponctuation du moteur
+{
+  const fieldOps = (t) => JSON.stringify(P.parse(t, C).map(o => o.type === 'field' ? 'F' + o.dir : o.type === 'text' ? o.text : o.type));
+  for (const [t, exp] of [['champ suivant', '["F1"]'], ['Champ suivant.', '["F1"]'], ['champs suivants', '["F1"]'], ['Chant suivant', '["F1"]'],
+    ['chants suivant', '["F1"]'], ['passe au champ suivant', '["F1"]'], ['prochain champ', '["F1"]'], ['champ précédent', '["F-1"]'],
+    ['Martin champ suivant douleur', '["Martin","F1","douleur"]'], ['Champ suivant. Douleur thoracique.', '["F1","Douleur thoracique."]']]) {
+    n++;
+    const got = fieldOps(t);
+    if (got !== exp) { fail++; console.log('ÉCHEC champ « ' + t + ' » : ' + got + ' au lieu de ' + exp); }
+  }
+}
+// Epellation (nom propre en majuscules)
+for (const [t, exp, end] of [['M A R T I N', 'MARTIN', false], ['emme a erre té i enne', 'MARTIN', false], ['d u p o n t tiret l a j o i e fin', 'DUPONT-LAJOIE', true],
+  ['l e f e accent grave v r e', 'LEFÈVRE', false], ['f r a n c cédille o i s', 'FRANÇOIS', false], ['double vé a t t', 'WATT', false], ['i grec v e s', 'YVES', false],
+  ['D, U, P, O, N, T.', 'DUPONT', false], ['martin', 'MARTIN', false], ['terminé', '', true]]) {
+  n++;
+  const r = P.spell(t);
+  if (r.text !== exp || r.end !== end) { fail++; console.log('ÉCHEC épellation « ' + t + ' » : ' + JSON.stringify(r)); }
+}
+n++; if (JSON.stringify(P.parse('patient monsieur épelle d u p o n t fin', C)) !== JSON.stringify([{ type: 'text', text: 'patient monsieur' }, { type: 'spell', text: 'd u p o n t fin' }])) { fail++; console.log('ÉCHEC commande épeler'); }
+// Validation anticipee : commandes fortes suivies d'au moins un mot
+for (const [t, exp] of [['alpha champ suivant bravo', 3], ['alpha champ suivant', 0], ['alpha champ suivant bravo champ suivant charlie', 6],
+  ['38 virgule 5 degrés', 0], ['patient vu point il va', 3], ['patient à la ligne examen', 4], ['épelle d u p o n t', 0], ['un point de côté', 0]]) {
+  n++; const got = P.commitPoint(t, C, 1);
+  if (got !== exp) { fail++; console.log('ÉCHEC commitPoint « ' + t + ' » : ' + got + ' au lieu de ' + exp); }
+}
+n++; if (P.firstCommandIndex('madame Durand champ suivant douleur', C) !== 14) { fail++; console.log('ÉCHEC firstCommandIndex : ' + P.firstCommandIndex('madame Durand champ suivant douleur', C)); }
 // Typographie sur texte existant
 const t = P.tidy('Bonjour ,il va bien:oui ? « test » ... fin.ok', {}).replace(/ /g, '~');
 n++; if (t !== 'Bonjour, il va bien:oui~? «~test~»… Fin. Ok') { fail++; console.log('ÉCHEC tidy : ' + JSON.stringify(t)); }
