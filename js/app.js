@@ -25,7 +25,9 @@
     x: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
     pen: svg('<path d="M4 20h4L19 9l-4-4L4 16z"/>'),
     list: svg('<path d="M9 6h11M9 12h11M9 18h11"/><path d="M3.5 6l1 1 2-2M3.5 12l1 1 2-2M3.5 18l1 1 2-2"/>'),
-    send: svg('<path d="M5 12h14M13 6l6 6-6 6"/>')
+    send: svg('<path d="M5 12h14M13 6l6 6-6 6"/>'),
+    grip: svg('<circle cx="9" cy="6" r="1.3"/><circle cx="15" cy="6" r="1.3"/><circle cx="9" cy="12" r="1.3"/><circle cx="15" cy="12" r="1.3"/><circle cx="9" cy="18" r="1.3"/><circle cx="15" cy="18" r="1.3"/>'),
+    spell: svg('<path d="M4 16l4-11 4 11M5.5 12h5"/><path d="M13 16l3 3 5-7"/>')
   };
 
   /* ================================================================== */
@@ -48,6 +50,11 @@
   if (!settings.dbUrl && CFG.firebaseDatabaseUrl) settings.dbUrl = CFG.firebaseDatabaseUrl;
 
   const store = Object.assign({ dossiers: {}, current: null, tombstones: {} }, load(DATA_KEY, {}));
+  // Dictionnaire personnel et textes types : synchronises (pseudo-dossier « _cfg »)
+  store.cfg = Object.assign({ dict: '', snip: '' }, store.cfg || {});
+  store.cfg.t = Object.assign({ dict: 0, snip: 0 }, store.cfg.t || {});
+  const cfgListeners = [];
+  const CFG_DOC = { id: '_cfg', get t() { return store.cfg.t; }, meta: {}, fields: {} };
   const copiedFlags = {}; // local : { dossierId: { sectionId: texteCopie } }
 
   let saveTimer = null;
@@ -161,6 +168,8 @@
   function toPlain(s) {
     s = String(s || '').normalize('NFC')
       .replace(/\r\n?/g, '\n')
+      // champs a completer restes vides (textes types) : jamais copies
+      .replace(/[  ]*\[(?:…|\.\.\.|\s*)\]/g, '')
       .replace(/[‘’‚‛′´`]/g, '\'')
       .replace(/[“”„‟«»″]/g, '"')
       .replace(/[‐‑‒–—―−]/g, '-')
@@ -169,14 +178,22 @@
       .replace(/[​-‍⁠﻿]/g, '')
       .replace(/[•‣●▪◦⁃·]/g, '-')
       .replace(/œ/g, 'oe').replace(/Œ/g, 'OE')
-      .replace(/æ/g, 'ae').replace(/Æ/g, 'AE');
+      .replace(/æ/g, 'ae').replace(/Æ/g, 'AE')
+      // symboles hors Latin-1 produits par le lexique ou la dictee : jamais supprimes en silence
+      .replace(/μ/g, 'µ').replace(/β/g, 'bêta').replace(/α/g, 'alpha')
+      .replace(/γ/g, 'gamma').replace(/δ/g, 'delta').replace(/κ/g, 'kappa').replace(/λ/g, 'lambda')
+      .replace(/≤/g, '<=').replace(/≥/g, '>=').replace(/≠/g, '!=').replace(/≈/g, '~')
+      .replace(/→/g, '->').replace(/←/g, '<-');
     if (settings.ascii) {
-      s = s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/°/g, ' degres');
+      s = s.replace(/µ/g, 'micro').replace(/²/g, '2').replace(/³/g, '3')
+        .replace(/±/g, '+/-').replace(/×/g, 'x').replace(/÷/g, '/')
+        .replace(/°\s*C\b/g, 'C').replace(/°/g, ' degres');
+      s = s.normalize('NFD').replace(/[̀-ͯ]/g, '');
       s = s.replace(/[^\n\x20-\x7E]/g, '');
     } else {
-      s = s.replace(/[^\n\x20-\x7EÀ-ÿ°]/g, '');
+      s = s.replace(/[^\n\x20-\x7E¡-ÿ]/g, '');
     }
-    return s.split('\n').map(l => l.replace(/ {2,}/g, ' ').replace(/\s+$/, '')).join('\n')
+    return s.split('\n').map(l => l.replace(/ {2,}/g, ' ').replace(/ +([,.;:)])/g, (m, c) => c === ':' || c === ';' ? ' ' + c : c).replace(/\s+$/, '')).join('\n')
       .replace(/\n{3,}/g, '\n\n').trim();
   }
 
@@ -271,6 +288,7 @@
         '<div class="card-head">' +
           '<h2>' + escapeHtml(sec.title) + '</h2>' +
           '<span class="badge">Copié</span>' +
+          '<span class="drag-h" draggable="true" role="button" tabindex="0" title="Glisser le texte de l\'encart vers le logiciel" aria-label="Glisser">' + ICON.grip + '</span>' +
           '<button class="btn copy-btn" type="button" title="Copier cet encart' + (n <= 9 ? ' (Alt+' + n + ')' : '') + '">' + ICON.copy + '<span>' + (isEvo ? 'Tout' : 'Copier') + '</span></button>' +
         '</div>' +
         (sec.id === 'examen' ? examToolsHtml() : '') +
@@ -280,6 +298,7 @@
         (isEvo ? evoHtml() :
           '<textarea rows="3" placeholder="' + escapeHtml(sec.placeholder || 'Saisie ou dictée...') + '" aria-label="' + escapeHtml(sec.title) + '"></textarea>' +
           '<div class="card-foot"><span class="spacer"></span><span class="count"></span>' +
+          '<button type="button" class="link-btn check-btn" title="Vérifier l\'orthographe et la grammaire de l\'encart">' + ICON.spell + 'Vérifier</button>' +
           '<button type="button" class="link-btn clear-btn">' + ICON.clear + 'Effacer</button></div>');
       main.appendChild(card);
       els[sec.id] = { card, ta: isEvo ? null : $('textarea', card), chipsWrap: $('.chips-wrap', card), sec };
@@ -1058,7 +1077,7 @@
     refreshCard(id);
     if (!(id === 'ecg' && /\bxx\b/.test(text))) toast(e.sec.title + ' copié');
   }
-  async function copyAll() {
+  function allText() {
     const d = current();
     const blocks = [];
     for (const sec of visibleSections()) {
@@ -1066,8 +1085,34 @@
       if (!t) continue;
       blocks.push(settings.titles ? toPlain(sec.title) + ' :\n' + t : t);
     }
-    if (!blocks.length) { toast('Observation vide'); return; }
-    const ok = await copyText(blocks.join('\n\n'));
+    return blocks.join('\n\n');
+  }
+  // Glisser-deposer d'un encart vers un autre logiciel (texte brut)
+  main.addEventListener('dragstart', ev => {
+    const h = ev.target.closest && ev.target.closest('.drag-h');
+    if (!h) return;
+    const id = h.closest('.card').dataset.id;
+    const text = sectionText(current(), id);
+    if (!text) { ev.preventDefault(); toast('Encart vide'); return; }
+    startDrag(ev, text);
+  });
+  main.addEventListener('click', ev => {
+    if (ev.target.closest && ev.target.closest('.drag-h')) toast('Maintenez et faites glisser vers le logiciel (ou utilisez Copier)');
+  });
+  function startDrag(ev, text) {
+    ev.dataTransfer.effectAllowed = 'copy';
+    ev.dataTransfer.setData('text/plain', text);
+    const ghost = document.createElement('div');
+    ghost.className = 'drag-ghost';
+    ghost.textContent = text.length > 80 ? text.slice(0, 80) + '...' : text;
+    document.body.appendChild(ghost);
+    try { ev.dataTransfer.setDragImage(ghost, 12, 12); } catch (e) {}
+    setTimeout(() => ghost.remove(), 0);
+  }
+  async function copyAll() {
+    const text = allText();
+    if (!text) { toast('Observation vide'); return; }
+    const ok = await copyText(text);
     toast(ok ? 'Observation complète copiée' : 'Copie impossible');
   }
 
@@ -1092,9 +1137,10 @@
   /* ================================================================== */
   const SYNC_LABEL = { off: 'Local', connecting: 'Connexion', online: 'Synchronisé', offline: 'Hors ligne', error: 'Erreur' };
   const sync = new window.LSAUSync.SyncEngine({
-    getDossiers: () => store.dossiers,
+    getDossiers: () => Object.assign({ _cfg: CFG_DOC }, store.dossiers),
     getTombstones: () => store.tombstones,
     getValue: (d, field) => {
+      if (d.id === '_cfg') return store.cfg[field] == null ? '' : store.cfg[field];
       if (field === '_meta') {
         const m = Object.assign({}, d.meta);
         delete m.auto;
@@ -1105,6 +1151,14 @@
       return d.fields[field] == null ? '' : d.fields[field];
     },
     applyField: (id, field, value, t) => {
+      if (id === '_cfg') {
+        if (field !== 'dict' && field !== 'snip') return;
+        store.cfg[field] = typeof value === 'string' ? value : '';
+        store.cfg.t[field] = t;
+        persist();
+        cfgListeners.forEach(fn => { try { fn(field); } catch (e) {} });
+        return;
+      }
       if (store.tombstones[id]) return;
       let d = store.dossiers[id];
       if (!d) d = store.dossiers[id] = fix({ id, meta: { label: '', created: t }, t: {} });
@@ -1382,5 +1436,21 @@
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
 
-  window.LSAU = { toPlain, store, settings, ageInfo, colorOf, ecgSentence }; // pour les tests
+  // Interface utilisee par js/dictee.js (et par les tests)
+  window.LSAU = {
+    toPlain, store, settings, ageInfo, colorOf, ecgSentence, toast, copyText, escapeHtml, allText, startDrag,
+    sectionText: (id) => sectionText(current(), id),
+    copySection: (id) => { if (els[id]) copySection(id); },
+    sectionTitle: (id) => { const sec = SECTIONS.find(x => x.id === id); return sec ? sec.title : ''; },
+    cfg: () => store.cfg,
+    setCfg: (field, value) => {
+      if (store.cfg[field] === value) return;
+      store.cfg[field] = value;
+      store.cfg.t[field] = Date.now();
+      persist();
+      sync.queuePush('_cfg', field, 1500);
+    },
+    onCfgChange: (fn) => cfgListeners.push(fn),
+    autoGrow
+  };
 })();

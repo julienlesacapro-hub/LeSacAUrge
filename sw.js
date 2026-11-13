@@ -1,11 +1,13 @@
 /* LeSacAUrge - service worker (fonctionnement hors ligne)
    ©2026 LESACA Julien - Tous droits reserves. */
-const VERSION = '1.1.1'; // a aligner avec index.html (?v=) et js/config.js
+const VERSION = '1.2.0'; // a aligner avec index.html (?v=) et js/config.js
 const CACHE = 'lsau-v' + VERSION;
 const V = '?v=' + VERSION;
 const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'css/styles.css' + V,
   'js/config.js' + V, 'js/data.js' + V, 'js/sync.js' + V, 'js/app.js' + V, 'js/vendor/qrcode.js' + V,
+  'js/lexique.js' + V, 'js/lexique-medical.js' + V, 'js/definitions.js' + V, 'js/pipeline.js' + V,
+  'js/speech.js' + V, 'js/dictee.js' + V,
   'icons/icon-32.png', 'icons/icon-64.png', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'
 ];
 self.addEventListener('install', e => {

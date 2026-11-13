@@ -1,0 +1,17 @@
+== {{langue|fr}} ==
+=== {{S|étymologie}} ===
+: Du {{étyl|la|fr|mot=dyspnoea}}, issu du grec ancien {{polytonique|δύσπνοια|dúspnoia}}.
+
+=== {{S|nom|fr}} ===
+{{fr-rég|dis.pne}}
+'''dyspnée''' {{pron|dis.pne|fr}} {{f}}
+# {{médecine|fr}} [[difficulté|Difficulté]] à [[respirer]], [[essoufflement]].<ref>{{Import:DAF8}}</ref>
+#* ''Le patient présente une '''dyspnée''' d’effort.''
+# {{lexique|médecine|vétérinaire|fr}} Gêne respiratoire chez l’animal.
+
+==== {{S|dérivés}} ====
+* [[dyspnéique]]
+
+== {{langue|en}} ==
+=== {{S|nom|en}} ===
+# Dyspnea.
