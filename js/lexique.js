@@ -12,6 +12,17 @@
      say     : formulations reconnues (la premiere est celle affichee)
      guard   : (facultatif) nom d'un garde-fou contextuel (voir pipeline.js)
      ------------------------------------------------------------------ */
+  function fieldPhrases(after, before) {
+    const nouns = ['champ', 'champs', 'chant', 'chants'];
+    const out = [];
+    for (const n of nouns) for (const a of after) out.push(n + ' ' + a);
+    for (const b of before) for (const n of nouns) out.push(b + ' ' + n);
+    // « passe au champ suivant », « aller au champ suivant »...
+    for (const v of ['passe au', 'passer au', 'passez au', 'va au', 'aller au', 'allez au', 'au']) for (const n of nouns) out.push(v + ' ' + n + ' ' + after[0]);
+    // formes les plus naturelles en tete (affichees dans l'aide), sans doublon
+    const first = ['champ ' + after[0]].concat(before.length ? ['prochain champ'] : [], ['passe au champ ' + after[0], 'chant ' + after[0], 'champs ' + after[1]]);
+    return first.concat(out).filter((x, i, arr) => arr.indexOf(x) === i);
+  }
   const COMMANDS = [
     // Ponctuation
     { id: 'p_dot_nl', group: 'Ponctuation', label: '. puis à la ligne', say: ['point à la ligne', 'point retour à la ligne'] },
@@ -60,7 +71,12 @@
     { id: 'redo', group: 'Correction', label: 'Rétablir', say: ['rétablis', 'rétablir la dernière action'] },
 
     // Textes types
-    { id: 'field_next', group: 'Textes types', label: 'Aller au champ à compléter suivant', say: ['champ suivant', 'prochain champ', 'champ d\'après'] },
+    // « champ » = « champs » = « chant(s) » a l'oreille : la reconnaissance ecrit l'un ou l'autre
+    { id: 'field_next', group: 'Textes types', label: 'Aller au champ à compléter suivant', say: fieldPhrases(['suivant', 'suivants', 'd\'après'], ['prochain', 'prochains']) },
+    { id: 'field_prev', group: 'Textes types', label: 'Revenir au champ à compléter précédent', say: fieldPhrases(['précédent', 'précédents', 'd\'avant'], []) },
+
+    // Epellation d'un nom propre (ecrit en majuscules)
+    { id: 'spell_on', group: 'Épellation', label: 'Épeler un nom lettre par lettre, écrit en MAJUSCULES (terminer par « fin »)', say: ['début d\'épellation', 'mode épellation', 'je vais épeler', 'j\'épelle', 'épellation', 'épeler', 'épelle', 'épelez'] },
 
     // Actions
     { id: 'copy', group: 'Actions', label: 'Copier le texte enrichi', say: ['copie le texte', 'copier le texte', 'copie tout', 'copier tout'] },
@@ -125,6 +141,12 @@
     ['beta[ -]?hcg|bêta[ -]?hcg', 'β-hCG'],
     ['j ?(\\d+)', 'J$1'],
     ['et al(?!\\.)', 'et al.'],
+
+    // Formules de courrier mal reconnues (relevees par l'utilisateur, 13/11/2026)
+    // Formule d'appel seulement : pas apres un determinant (« mes chers confrères », « le cher concert »)
+    ['(?:(?:mes|nos|vos|les|des|ces|le|un|ce|du|au|son|mon|notre|votre)\\s+)?chers confrères?,?', m => /^(mes|nos|vos|les|des|ces|le|un|ce|du|au|son|mon|notre|votre)\s/i.test(m) ? m : 'cher confrère,'],
+    ['(?:(?:mes|nos|vos|les|des|ces|le|un|ce|du|au|son|mon|notre|votre)\\s+)?chers? concerts?,?', m => /^(mes|nos|vos|les|des|ces|le|un|ce|du|au|son|mon|notre|votre)\s/i.test(m) ? m : 'chère consœur,'],
+    ['cher consœur', 'chère consœur'],
 
     // Eponymes (majuscule)
     ['guillain[ -]barré', 'Guillain-Barré'],

@@ -43,6 +43,24 @@ copie en **texte brut** d'un clic dans le logiciel d'observation.
   « vérifie le texte », « arrête la dictée »). Propres à LeSacAUrge : « encart examen », « aller à
   l'évolution », « passe aux antécédents »… pour changer d'encart, « valide l'entrée » pour ajouter
   l'entrée d'évolution dictée. Liste complète : bouton « ? » de la barre de dictée.
+- **Commandes appliquées au fil de la parole** (moteur du navigateur) : « à la ligne », « nouveau
+  paragraphe », « point », « champ suivant », « insère … » agissent dès que le mot suivant est reconnu,
+  sans attendre la fin de la phrase (Safari iOS ne rend souvent la phrase définitive qu'à l'arrêt de la
+  parole). Les sauts de ligne produits par le moteur lui-même sont reconnus.
+- **Champs à choix** dans les textes types : `{monsieur|madame}`, `{paragraphe A|paragraphe B}`,
+  `{paragraphe facultatif|}` (option vide = rien). Choix d'un toucher (menu), à la voix (« madame »,
+  « option 2 », « deuxième », « rien ») ou au clavier (1, 2…), puis passage au champ suivant ; la suite
+  de la phrase y est dictée (« madame Durand champ suivant le SAMU »). Un choix non fait n'est pas
+  copié (avertissement). Boutons « Choix » et « Facultatif » dans le gestionnaire.
+- **« champ suivant » / « champ précédent »** (et homophones : « chant suivant », « champs suivants »,
+  « passe au champ suivant »), Tab / Maj+Tab.
+- **Épeler un nom propre** : « épeler » (ou bouton ABC), puis les lettres (« M A R T I N », « emme, a,
+  erre… », « double vé », « tiret », « e accent grave »…) ; écrit en MAJUSCULES ; « fin » (ou 8 s de
+  silence) pour terminer, la suite de la phrase reprend normalement.
+- **Clavier à la demande** (téléphone, tablette) : toucher un encart ne fait plus surgir le clavier ;
+  bouton clavier de la barre de dictée pour l'afficher (affiché d'office si la dictée passe par le clavier).
+- **Suivi en direct** (Réglages > Synchronisation) : quand un appareil dicte pour un patient, l'autre
+  l'affiche automatiquement ; si l'on est en train d'écrire, une proposition « Ouvrir » s'affiche.
 - **Lexique médical intégré** (2 892 termes, 1 243 abréviations, 3 156 noms de médicaments) :
   accents, sigles en capitales, médicaments, mots coupés reconstitués, unités (mg, µg, mmHg, °C…),
   « 13 sur 8 » → 13/8, « 38 virgule 5 » → 38,5.

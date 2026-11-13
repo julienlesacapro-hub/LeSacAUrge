@@ -31,15 +31,45 @@
       rec.interimResults = true;
       rec.maxAlternatives = 1;
       rec.onstart = () => this.h.onState('listening');
+      /* Les resultats d'une session s'accumulent (definitifs puis provisoires). On applique
+         au fil de l'eau : tout ce qui est definitif, plus la partie provisoire jusqu'a la
+         derniere commande forte deja suivie de mots (« champ suivant blabla ... »).
+         Ainsi les commandes agissent sans attendre la fin de la phrase (Safari iOS ne rend
+         souvent les resultats definitifs qu'a l'arret de la parole). */
+      const sess = { committed: 0, tail: '', words: [] };
+      const norm = w => w.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\p{L}\p{N}]/gu, '');
       rec.onresult = (ev) => {
-        let interim = '';
-        for (let i = ev.resultIndex; i < ev.results.length; i++) {
-          const r = ev.results[i];
-          if (r.isFinal) this.h.onFinal(r[0].transcript);
-          else interim += r[0].transcript;
+        let finalText = '', all = '', allFinal = true;
+        for (let i = 0; i < ev.results.length; i++) {
+          const t = ev.results[i][0].transcript;
+          all += ' ' + t;
+          if (ev.results[i].isFinal && allFinal) finalText += ' ' + t; else allFinal = false;
         }
-        this.h.onInterim(interim);
+        // les sauts de ligne renvoyes par le moteur deviennent des mots-commandes
+        const toWords = s => (this.h.normalize ? this.h.normalize(s) : s).split(/\s+/).filter(Boolean);
+        const words = toWords(all);
+        sess.words = words;
+        // realignement si le moteur a revise le debut deja applique
+        if (sess.committed && sess.tail) {
+          const tailN = sess.tail.split(' ');
+          const at = (i) => tailN.every((w, k) => norm(words[i - tailN.length + k] || '') === w);
+          if (!at(sess.committed)) {
+            for (let i = Math.min(words.length, sess.committed + 6); i >= tailN.length; i--) if (at(i)) { sess.committed = i; break; }
+          }
+        }
+        const finalCount = toWords(finalText).length;
+        let stable = Math.max(finalCount, sess.committed);
+        const rest = words.slice(sess.committed).join(' ');
+        if (this.h.commitPoint && rest) stable = Math.max(stable, sess.committed + this.h.commitPoint(rest));
+        if (stable > sess.committed) {
+          const chunk = words.slice(sess.committed, stable).join(' ');
+          sess.committed = stable;
+          sess.tail = words.slice(Math.max(0, stable - 3), stable).map(norm).join(' ');
+          this.h.onFinal(chunk);
+        }
+        this.h.onInterim(words.slice(sess.committed).join(' '));
       };
+      rec._sess = sess;
       rec.onerror = (ev) => {
         if (ev.error === 'no-speech' || ev.error === 'aborted') return;
         if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
@@ -54,6 +84,12 @@
         } else this.h.onError('Erreur de reconnaissance : ' + ev.error);
       };
       rec.onend = () => {
+        // fin de session sans resultat definitif (Safari) : le reste deja reconnu est applique
+        if (sess.words.length > sess.committed) {
+          const chunk = sess.words.slice(sess.committed).join(' ');
+          sess.committed = sess.words.length;
+          this.h.onFinal(chunk);
+        }
         this.h.onInterim('');
         if (this.wanted && this.rec === rec) setTimeout(() => { if (this.wanted && this.rec === rec) { try { this._open(); } catch (e) { this.stop(); } } }, 200);
         else this.h.onState('idle');

@@ -88,7 +88,9 @@
     del_sentence: [{ type: 'edit', what: 'sentence' }],
     undo: [{ type: 'edit', what: 'undo' }],
     redo: [{ type: 'edit', what: 'redo' }],
+    spell_on: [{ type: 'spell' }],
     field_next: [{ type: 'field', dir: 1 }],
+    field_prev: [{ type: 'field', dir: -1 }],
     copy: [{ type: 'action', name: 'copy' }],
     check: [{ type: 'action', name: 'check' }],
     stop: [{ type: 'action', name: 'stop' }]
@@ -106,7 +108,7 @@
     for (const c of LEX.COMMANDS) for (const p of c.say) phrases.push({ p, id: c.id, guard: c.guard });
     phrases.sort((a, b) => b.p.length - a.p.length);
     const byPhrase = new Map();
-    const alts = phrases.map((x, i) => { byPhrase.set('c' + i, x); return '(?<c' + i + '>' + phraseRe(x.p) + ')'; });
+    const alts = phrases.map((x, i) => { byPhrase.set('c' + i, x); return '(?<c' + i + '>' + looseRe(x.p) + ')'; });
     // Textes types : « insère / insérer / insérez [le|la|l'|un|une|mon|ma|mes] <nom> »,
     // nom reconnu sans tenir compte des accents ni de la casse ; nom le plus long d'abord
     snippets.map((s, i) => [s, i]).sort((a, b) => a[0][0].length - b[0][0].length).forEach(([s, i]) => {
@@ -198,14 +200,28 @@
     return s.replace(/\s+$/, '').replace(/^ /, '');
   }
 
+  /* Les moteurs de reconnaissance (Apple notamment) transforment parfois eux-memes
+     « à la ligne » et « nouveau paragraphe » en vrais sauts de ligne : on les reconvertit
+     en commandes avant de normaliser les espaces. */
+  function normalizeTranscript(t) {
+    return String(t || '').replace(/\r/g, '')
+      .replace(/[ \t\u00a0]*\n[ \t\u00a0]*\n\s*/g, ' nouveau paragraphe ')
+      .replace(/[ \t\u00a0]*\n[ \t\u00a0]*/g, ' à la ligne ')
+      .replace(/[\u2028\u2029]/g, ' nouveau paragraphe ');
+  }
+  const LAYOUT = new Set(['nl', 'par', 'block', 'list', 'li', 'endlist', 'field']);
+
   /* Transcription -> liste d'operations */
   function parse(transcript, C) {
-    const src = String(transcript || '').replace(/\s+/g, ' ').trim()
+    const src = normalizeTranscript(transcript).replace(/\s+/g, ' ').trim()
       .replace(/(\d)\s*virgule\s*(\d)/giu, '$1,$2');   // 38 virgule 5 -> 38,5
     const ops = [];
     let last = 0, buf = '';
     const flushText = (t) => {
-      const txt = t.trim();
+      let txt = t.trim();
+      // ponctuation ajoutee par le moteur juste apres une commande de mise en page (« À la ligne. Examen »)
+      const prevOp = ops[ops.length - 1];
+      if (prevOp && LAYOUT.has(prevOp.type)) txt = txt.replace(/^[.,;:!?…]+\s*/, '');
       if (txt) ops.push({ type: 'text', text: correct(txt, C) });
     };
     C.cmdRe.lastIndex = 0;
@@ -231,6 +247,7 @@
         continue; // reste du texte
       }
       flushText(before); buf = '';
+      if (info.id === 'spell_on') { ops.push({ type: 'spell', text: src.slice(end).trim() }); return ops; }
       for (const op of CMD_OPS[info.id]) ops.push(Object.assign({}, op));
       last = end;
       C.cmdRe.lastIndex = end;
@@ -313,7 +330,10 @@
         case '.':
           if (/[.…!?,;:]$/.test(prev.replace(/[  ]+$/, ''))) return { del: trailing, ins: '' };
           return { del: trailing, ins: '.' };
-        case ',': case ')': case '…':
+        case ',':
+          if (/,$/.test(prev.replace(/[ \u00a0]+$/, ''))) return { del: trailing, ins: '' };
+          return { del: trailing, ins: ',' };
+        case ')': case '…':
           return { del: trailing, ins: ch };
         case ';': case ':': case '?': case '!':
           return { del: trailing, ins: (blank ? '' : NB) + ch };
@@ -402,7 +422,101 @@
     return s;
   }
 
-  const api = { compile, parse, correct, joinPiece, renderPlain, tidy, needsCap, incompleteTail };
+  /* Epellation : « emme a erre té i enne » / « M A R T I N » -> « MARTIN ».
+     Renvoie { text, end } ; end = l'utilisateur a dit « fin » (ou « terminé »). */
+  const LETTERS = {
+    a: 'A', ah: 'A', be: 'B', bee: 'B', ce: 'C', se: 'C', ses: 'C', "c'est": 'C', sait: 'C', de: 'D', des: 'D',
+    e: 'E', eu: 'E', euh: 'E', effe: 'F', ef: 'F', ge: 'G', "j'ai": 'G', hache: 'H', ache: 'H', ach: 'H', i: 'I', hi: 'I',
+    ji: 'J', gi: 'J', ka: 'K', ca: 'K', kah: 'K', elle: 'L', el: 'L', aile: 'L', emme: 'M', em: 'M', aime: 'M',
+    enne: 'N', en: 'N', haine: 'N', o: 'O', oh: 'O', eau: 'O', au: 'O', haut: 'O', pe: 'P', pet: 'P', paix: 'P',
+    qu: 'Q', cu: 'Q', ku: 'Q', erre: 'R', air: 'R', aire: 'R', er: 'R', esse: 'S', es: 'S', te: 'T', the: 'T', tes: 'T',
+    u: 'U', hu: 'U', ve: 'V', vee: 'V', ixe: 'X', ix: 'X', igrec: 'Y', zede: 'Z', zed: 'Z', zedd: 'Z'
+  };
+  const PAIRS = { 'double ve': 'W', 'double v': 'W', 'i grec': 'Y', 'trait d\'union': '-' };
+  const ACCENTS = {
+    aigu: { E: 'É' }, grave: { E: 'È', A: 'À', U: 'Ù' }, circonflexe: { E: 'Ê', A: 'Â', I: 'Î', O: 'Ô', U: 'Û' },
+    trema: { E: 'Ë', I: 'Ï', U: 'Ü' }, cedille: { C: 'Ç' }
+  };
+  const SPELL_END = /^(fin|termine|terminee|stop|fini)$/;
+  function spell(text) {
+    const toks = String(text || '').replace(/[’]/g, "'").split(/[\s,.;:!?«»"()]+/).filter(Boolean);
+    let out = '', end = false;
+    for (let i = 0; i < toks.length; i++) {
+      const raw = toks[i];
+      const k = norm(raw);
+      const k2 = i + 1 < toks.length ? k + ' ' + norm(toks[i + 1]) : '';
+      if (SPELL_END.test(k) || (k === 'fin' && /^(d|de)/.test(norm(toks[i + 1] || '')))) { end = true; break; }
+      if (k === 'c\'est' && norm(toks[i + 1] || '') === 'tout') { end = true; break; }
+      if (PAIRS[k2]) { out += PAIRS[k2]; i++; continue; }
+      if (k === 'accent' || ACCENTS[k]) {           // « e accent aigu » -> É
+        const kind = k === 'accent' ? norm(toks[++i] || '') : k;
+        const map = ACCENTS[kind];
+        if (map && out && map[out.slice(-1)]) out = out.slice(0, -1) + map[out.slice(-1)];
+        continue;
+      }
+      if (k === 'tiret') { out += '-'; continue; }
+      if (k === 'espace') { out += ' '; continue; }
+      if (k === 'apostrophe') { out += "'"; continue; }
+      if (k === 'majuscule' || k === 'lettre' || k === 'et' || k === 'puis') continue;
+      if (/^\p{L}$/u.test(raw) || /^\d$/.test(raw)) { out += raw.toUpperCase(); continue; }
+      if (LETTERS[k]) { out += LETTERS[k]; continue; }
+      // lettres deja regroupees par la reconnaissance (« martin », « Jean-Pierre ») : gardees, en majuscules
+      out += raw.toUpperCase();
+    }
+    return { text: out.replace(/^-+|-+$/g, '').replace(/ {2,}/g, ' '), end };
+  }
+
+  /* Validation anticipee : nombre de mots de « text » qui peuvent etre appliques tout de
+     suite, c'est-a-dire jusqu'a la fin de la derniere commande « forte » (mise en page,
+     champ, texte type, point final...) suivie d'au moins minAfter mots deja reconnus.
+     Les commandes legeres (virgule...) n'en declenchent pas : « 38 virgule 5 » doit
+     rester entier pour devenir 38,5. */
+  const STRONG = new Set(['p_dot', 'p_dot_nl', 'p_dot_par', 'p_q', 'p_excl', 'p_ellipsis', 'nl', 'par', 'h_on', 'h_off',
+    'ul', 'ol', 'li', 'list_off', 'field_next', 'field_prev']);
+  function commitPoint(text, C, minAfter) {
+    const src = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!src) return 0;
+    minAfter = minAfter == null ? 2 : minAfter;
+    let best = 0, m;
+    C.cmdRe.lastIndex = 0;
+    while ((m = C.cmdRe.exec(src))) {
+      const pre = m[1] || '';
+      const start = m.index + pre.length;
+      const end = start + m[2].length;
+      const g = m.groups || {};
+      const key = Object.keys(g).find(k => g[k] !== undefined);
+      if (!key) continue;
+      const info = key[0] === 's' ? { id: 'snippet' } : C.byPhrase.get(key);
+      if (info.guard && !GUARDS[info.guard](src.slice(0, start), src.slice(end))) { C.cmdRe.lastIndex = start + 1; continue; }
+      C.cmdRe.lastIndex = end;
+      if (info.id === 'spell_on') break;                     // l'epellation se traite d'un bloc
+      if (!STRONG.has(info.id) && info.id !== 'snippet') continue;
+      const after = src.slice(end).trim().split(' ').filter(Boolean).length;
+      if (after >= minAfter) best = end;
+    }
+    return best ? src.slice(0, best).split(' ').filter(Boolean).length : 0;
+  }
+
+  /* Position (caracteres) de la premiere commande de « text », -1 s'il n'y en a pas */
+  function firstCommandIndex(text, C) {
+    const src = String(text || '');
+    let m;
+    C.cmdRe.lastIndex = 0;
+    while ((m = C.cmdRe.exec(src))) {
+      const pre = m[1] || '';
+      const start = m.index + pre.length;
+      const end = start + m[2].length;
+      const g = m.groups || {};
+      const key = Object.keys(g).find(k => g[k] !== undefined);
+      if (!key) continue;
+      const info = key[0] === 's' ? {} : C.byPhrase.get(key);
+      if (info.guard && !GUARDS[info.guard](src.slice(0, start), src.slice(end))) { C.cmdRe.lastIndex = start + 1; continue; }
+      return start;
+    }
+    return -1;
+  }
+
+  const api = { firstCommandIndex, commitPoint, spell, compile, parse, correct, joinPiece, renderPlain, tidy, needsCap, incompleteTail, normalizeTranscript };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.LSAMM_PIPE = api;
 })(typeof window !== 'undefined' ? window : globalThis);

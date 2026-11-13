@@ -595,3 +595,33 @@ textarea.dict-target { box-shadow: inset 4px 0 0 #e0443c !important; background:
 @media (min-width: 601px) and (hover: none) { .drag-h { display: inline-grid; } }
 .dock-btn .lbl-short { display: none; }
 @media (max-width: 600px) { .dock-btn .lbl-long { display: none; } .dock-btn .lbl-short { display: inline; } }
+
+/* Epellation, clavier a la demande, champs a choix, suivi en direct */
+.dict-tools { display: inline-flex; gap: 6px; margin-left: auto; }
+.mini-btn {
+  display: inline-grid; place-items: center; min-width: 34px; height: 26px; padding: 0 7px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--ink-2); cursor: pointer; font-size: 11.5px; font-weight: 800; letter-spacing: .4px;
+}
+.mini-btn svg { width: 17px; height: 17px; }
+.mini-btn.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+.only-touch { display: none; }
+body.touch .only-touch { display: inline-grid; }
+.interim.spell { background: var(--brand); font-style: normal; font-weight: 700; }
+.choice-menu {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(126px + env(safe-area-inset-bottom)); z-index: 34;
+  width: min(460px, calc(100vw - 20px)); max-height: 50vh; overflow: auto; background: var(--surface); color: var(--ink);
+  border: 1px solid var(--line); border-left: 4px solid var(--brand-2); border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.25);
+}
+.choice-head { padding: 10px 14px; border-bottom: 1px solid var(--line); font-weight: 700; font-size: 14px; }
+.choice-head .hint { display: inline; font-weight: 500; margin: 0; }
+.choice-where { display: block; font-size: 12px; font-weight: 600; color: var(--brand-2); }
+.choice-menu ul { list-style: none; margin: 0; padding: 6px; }
+.choice-menu li button { display: flex; gap: 8px; width: 100%; text-align: left; border: 0; background: none; color: var(--ink); padding: 9px 10px; border-radius: 10px; white-space: pre-wrap; cursor: pointer; font-size: 14px; }
+.choice-menu li button:hover { background: var(--surface-2); }
+.choice-menu li b { color: var(--brand-2); }
+.choice-menu li.none span { color: var(--ink-2); font-style: italic; }
+.choice-foot { display: flex; justify-content: flex-end; padding: 6px 10px; border-top: 1px solid var(--line); }
+@keyframes remoteFlash { 0% { box-shadow: 0 0 0 3px #3d7fd0; } 100% { box-shadow: 0 0 0 3px transparent; } }
+.card.remote-flash { animation: remoteFlash 1.2s ease-out; }
+@media (prefers-reduced-motion: reduce) { .card.remote-flash { animation: none; } }
+@media (max-width: 600px) { .dock-status { gap: 6px; } .dict-info span { display: none; } }

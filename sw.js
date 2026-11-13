@@ -1,6 +1,6 @@
 /* LeSacAUrge - service worker (fonctionnement hors ligne)
    ©2026 LESACA Julien - Tous droits reserves. */
-const VERSION = '1.2.0'; // a aligner avec index.html (?v=) et js/config.js
+const VERSION = '1.3.0'; // a aligner avec index.html (?v=) et js/config.js
 const CACHE = 'lsau-v' + VERSION;
 const V = '?v=' + VERSION;
 const ASSETS = [
