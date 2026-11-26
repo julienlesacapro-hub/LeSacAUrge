@@ -739,6 +739,7 @@
         node.innerHTML =
           '<div class="evo-head"><input type="time" class="evo-time" aria-label="Heure">' +
           '<span class="evo-state"></span><span class="spacer"></span>' +
+          '<span class="evo-drag" draggable="true" role="button" tabindex="0" title="Glisser l\'entrée vers le logiciel" aria-label="Glisser l\'entrée">' + ICON.grip + '</span>' +
           '<button type="button" class="btn evo-copy">' + ICON.copy + '<span>Copier</span></button>' +
           '<button type="button" class="icon-btn evo-del" aria-label="Supprimer l\'entrée" title="Supprimer l\'entrée">' + ICON.x + '</button></div>' +
           '<textarea rows="1" data-min="48" aria-label="Entrée d\'évolution"></textarea>';
@@ -1099,28 +1100,84 @@
     }
     return blocks.join('\n\n');
   }
-  // Glisser-deposer d'un encart vers un autre logiciel (texte brut)
+  /* Glisser-deposer vers un autre logiciel (texte brut, copie) :
+     poignee d'un encart, poignee d'une entree d'evolution, passage selectionne,
+     observation complete (barre de dictee). Un depot reussi marque le texte « Copié ». */
+  let dragCtx = null;
   main.addEventListener('dragstart', ev => {
-    const h = ev.target.closest && ev.target.closest('.drag-h');
-    if (!h) return;
-    const id = h.closest('.card').dataset.id;
-    const text = sectionText(current(), id);
-    if (!text) { ev.preventDefault(); toast('Encart vide'); return; }
-    startDrag(ev, text);
+    const t = ev.target;
+    const h = t.closest && t.closest('.drag-h');
+    const eh = t.closest && t.closest('.evo-drag');
+    if (eh) {
+      const x = current().evo.find(y => y.id === eh.closest('.evo-item').dataset.eid);
+      if (!x || !x.text.trim()) { ev.preventDefault(); toast('Entrée vide'); return; }
+      startDrag(ev, evoLine(x), { kind: 'evo', eid: x.id });
+      return;
+    }
+    if (h) {
+      const id = h.closest('.card').dataset.id;
+      const text = sectionText(current(), id);
+      if (!text) { ev.preventDefault(); toast('Encart vide'); return; }
+      startDrag(ev, text, { kind: 'card', id });
+      return;
+    }
+    // passage selectionne dans un encart : nettoye en texte brut, jamais deplace
+    if (t.tagName === 'TEXTAREA' && t.selectionEnd > t.selectionStart) {
+      const text = toPlain(t.value.slice(t.selectionStart, t.selectionEnd));
+      if (!text) return;
+      ev.dataTransfer.effectAllowed = 'copy';
+      ev.dataTransfer.setData('text/plain', text);
+      dragCtx = { kind: 'sel', text };
+    }
   });
   main.addEventListener('click', ev => {
-    if (ev.target.closest && ev.target.closest('.drag-h')) toast('Maintenez et faites glisser vers le logiciel (ou utilisez Copier)');
+    if (ev.target.closest && ev.target.closest('.drag-h, .evo-drag')) toast('Maintenez puis faites glisser vers l\'autre logiciel (le texte est aussi copié : Ctrl+V)');
   });
-  function startDrag(ev, text) {
+  function startDrag(ev, text, ctx) {
     ev.dataTransfer.effectAllowed = 'copy';
     ev.dataTransfer.setData('text/plain', text);
+    dragCtx = Object.assign({ text }, ctx || { kind: 'all' });
+    // aussi dans le presse-papiers : coller (Ctrl+V) si le logiciel refuse le depot
+    try { if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).catch(() => {}); } catch (e) {}
     const ghost = document.createElement('div');
     ghost.className = 'drag-ghost';
     ghost.textContent = text.length > 80 ? text.slice(0, 80) + '...' : text;
     document.body.appendChild(ghost);
     try { ev.dataTransfer.setDragImage(ghost, 12, 12); } catch (e) {}
     setTimeout(() => ghost.remove(), 0);
+    document.body.classList.add('dragging-out');
   }
+  // Fin du glisser : si le depot a ete accepte, le texte est marque « Copié »
+  document.addEventListener('dragend', ev => {
+    document.body.classList.remove('dragging-out');
+    const ctx = dragCtx;
+    dragCtx = null;
+    if (!ctx || ctx.kind === 'sel') return;
+    const eff = ev.dataTransfer ? ev.dataTransfer.dropEffect : 'none';
+    if (eff === 'none') return; // abandonne (ou depot non signale par le systeme)
+    const d = current();
+    const markCard = id => {
+      if (id === 'evolution') {
+        const now = Date.now();
+        d.evo.forEach(x => { if (!x.del && !x.c && x.text.trim()) { x.c = now; x.u = now; } });
+        saveEvo(d); renderEvo();
+      } else {
+        copiedFlags[store.current] = copiedFlags[store.current] || {};
+        copiedFlags[store.current][id] = sectionText(d, id);
+        refreshCard(id);
+      }
+    };
+    if (ctx.kind === 'card') { markCard(ctx.id); toast(APP_TITLE(ctx.id) + ' déposé' + pendingMsg(pendingCount(d, [ctx.id]))); }
+    else if (ctx.kind === 'evo') {
+      const x = d.evo.find(y => y.id === ctx.eid);
+      if (x) { x.c = Date.now(); x.u = Date.now(); saveEvo(d); renderEvo(); }
+      toast('Entrée déposée');
+    } else if (ctx.kind === 'all') {
+      visibleSections().forEach(sec => { if (sectionText(d, sec.id)) markCard(sec.id); });
+      toast('Observation complète déposée' + pendingMsg(pendingCount(d, visibleSections().map(x => x.id))));
+    }
+  });
+  const APP_TITLE = id => { const sec = SECTIONS.find(x => x.id === id); return sec ? sec.title : 'Encart'; };
   async function copyAll() {
     const text = allText();
     if (!text) { toast('Observation vide'); return; }
@@ -1483,7 +1540,8 @@
 
   // Interface utilisee par js/dictee.js (et par les tests)
   window.LSAU = {
-    toPlain, store, settings, ageInfo, colorOf, ecgSentence, toast, copyText, escapeHtml, allText, startDrag,
+    toPlain, store, settings, ageInfo, colorOf, ecgSentence, toast, copyText, escapeHtml, allText,
+    startDrag: (ev, text) => startDrag(ev, text, { kind: 'all' }),
     sectionText: (id) => sectionText(current(), id),
     copySection: (id) => { if (els[id]) copySection(id); },
     sectionTitle: (id) => { const sec = SECTIONS.find(x => x.id === id); return sec ? sec.title : ''; },

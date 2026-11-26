@@ -75,8 +75,12 @@ copie en **texte brut** d'un clic dans le logiciel d'observation.
   signalés ; « Ajouter au dictionnaire ».
 - **Définitions** : sélectionner un mot (ou bouton « Définition ») ; abréviations et médicaments
   intégrés (hors ligne), autres mots par Wiktionnaire puis Wikipédia (seul le mot est envoyé).
-- **Glisser-déposer** : poignée de chaque encart, ou « Glisser » de la barre de dictée pour
-  l'observation complète, vers le logiciel d'observation (texte brut). Sur ordinateur et tablette.
+- **Glisser-déposer vers un autre logiciel** (texte brut, toujours une copie) : poignée de chaque
+  encart, poignée de chaque entrée d'évolution, « Glisser » de la barre de dictée pour l'observation
+  complète, ou passage sélectionné dans un encart. Le texte glissé est aussi placé dans le
+  presse-papiers (Ctrl+V si le logiciel refuse le dépôt) ; un dépôt accepté marque l'encart ou
+  l'entrée « Copié ». Fiable sur ordinateur ; sur téléphone et tablette, dépend du système (glisser
+  vers une autre application en écran partagé).
 - Fonctionne hors ligne (sauf reconnaissance vocale du navigateur, vérification et définitions en
   ligne), thème clair/sombre, installable sur l'écran d'accueil.
 - Synchronisation téléphone et ordinateur, **chiffrée de bout en bout**.
